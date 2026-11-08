@@ -1,0 +1,270 @@
+# managers/escort_manager.py
+"""押镖与劫道系统 - 高风险博弈玩法"""
+import time
+import json
+import random
+from typing import Tuple, Dict
+
+from ..data.data_manager import DataBase
+from ..models import Player
+from ..models_extended import UserStatus
+from .combat_manager import CombatManager, CombatStats
+
+__all__ = ["EscortManager"]
+
+
+class EscortManager:
+    """押镖管理器：押镖期间全服可劫镖，劫镖触发强制PVP（v6.12 平衡版）
+    平衡要点：押镖收益上调；劫镖为公平满血PVP（无先手惩罚）；
+    劫镖有10分钟冷却；劫镖失败赔偿随境界提升；送达获功德+1。"""
+
+    ESCORT_DURATION = 1800          # 押镖时长 30 分钟
+    MIN_LEVEL = 3                   # 押镖/劫镖最低境界
+    ROB_ITEM = "迷神香"             # 劫镖消耗道具
+    ROB_WIN_CUT = 0.3               # 劫镖成功可抢走镖银的 30%
+    ROB_COOLDOWN = 600              # 劫镖冷却（秒）
+
+    def __init__(self, db: DataBase, combat_mgr: CombatManager, storage_ring_mgr):
+        self.db = db
+        self.combat_mgr = combat_mgr
+        self.storage_ring_mgr = storage_ring_mgr
+        self._social = None
+
+    async def _companion_bonus(self, user_id: str, perk_type: str) -> float:
+        """仙灵道侣加成（惰性加载 SocialManager）"""
+        try:
+            if self._social is None:
+                from .social_manager import SocialManager
+                self._social = SocialManager(self.db)
+            return await self._social.companion_bonus_async(user_id, perk_type)
+        except Exception:
+            return 0.0
+
+    async def start_escort(self, player: Player) -> Tuple[bool, str, Dict]:
+        """接镖：进入押镖状态，期间奖励随时间增长，但可被劫"""
+        user_id = player.user_id
+
+        # 接单冷却（10分钟）：防止完成即接无限刷
+        cd_key = f"escort_cd_{user_id}"
+        cd_val = await self.db.ext.get_system_config(cd_key)
+        now0 = int(time.time())
+        if cd_val and cd_val.isdigit() and now0 < int(cd_val):
+            remain = int(cd_val) - now0
+            return False, f"❌ 镖行趟次刚结束，请 {remain // 60} 分 {remain % 60} 秒后再接新镖。", {}
+
+        if player.level_index < self.MIN_LEVEL:
+            return False, f"❌ 押镖需要达到境界等级 {self.MIN_LEVEL}（练气后期）。", {}
+
+        user_cd = await self.db.ext.get_user_cd(user_id)
+        if not user_cd:
+            await self.db.ext.create_user_cd(user_id)
+            user_cd = await self.db.ext.get_user_cd(user_id)
+        if user_cd.type != UserStatus.IDLE:
+            return False, f"❌ 你当前正{UserStatus.get_name(user_cd.type)}，无法押镖！", {}
+
+        # 镖银与修为按境界浮动（v3.18.4 数值平衡：押镖收益对历练的风险溢价压缩到合理区间）
+        base = 2000 + player.level_index * 500
+        escort_bonus = await self._companion_bonus(user_id, "escort")
+        if escort_bonus > 0:
+            base = int(base * (1 + escort_bonus))
+        # 称号 gold_pct 加成
+        try:
+            from .title_manager import TitleManager
+            tstats = TitleManager(self.db).get_active_bonus(player)
+            gold_pct = float(tstats.get("gold_pct", 0))
+            if gold_pct > 0:
+                base = int(base * (1 + gold_pct))
+        except Exception:
+            pass
+        escort_gold = base + random.randint(-500, 1500)
+        escort_exp = base // 2 + random.randint(0, 600)
+
+        now = int(time.time())
+        extra = {
+            "escort_gold": escort_gold,
+            "escort_exp": escort_exp,
+        }
+        await self.db.ext.set_user_busy(user_id, UserStatus.DELIVERING, now + self.ESCORT_DURATION, extra_data=extra)
+
+        msg = (
+            f"🛡️ 你接下了一趟灵石镖！\n"
+            f"━━━━━━━━━━━━━━━\n"
+            f"镖银：{escort_gold:,} 灵石\n"
+            f"酬劳：{escort_exp:,} 修为\n"
+            f"押送时长：{self.ESCORT_DURATION // 60} 分钟\n"
+            f"━━━━━━━━━━━━━━━\n"
+            f"⚠️ 押镖期间全服玩家可消耗【迷神香】劫镖！\n"
+            f"被劫失败将损失部分镖银\n"
+            f"💡 时间到后发送 /完成押镖 结算"
+        )
+        return True, msg, {"gold": escort_gold, "exp": escort_exp}
+
+    async def finish_escort(self, player: Player) -> Tuple[bool, str]:
+        """完成押镖：到达时长领全款"""
+        user_id = player.user_id
+        user_cd = await self.db.ext.get_user_cd(user_id)
+        if not user_cd or user_cd.type != UserStatus.DELIVERING:
+            return False, "❌ 你当前没有在押镖！"
+
+        now = int(time.time())
+        if user_cd.scheduled_time and now < user_cd.scheduled_time:
+            remaining = user_cd.scheduled_time - now
+            return False, f"❌ 镖车尚未到达！还需 {remaining // 60} 分 {remaining % 60} 秒。"
+
+        extra = user_cd.get_extra_data() if hasattr(user_cd, "get_extra_data") else {}
+        escort_gold = int(extra.get("escort_gold", 2000))
+        escort_exp = int(extra.get("escort_exp", 1000))
+
+        # v3.25.5：先原子抢占结算权（防并发双领镖银），再原子记账
+        if not await self.db.ext.claim_user_free_if_type(user_id, UserStatus.DELIVERING):
+            return False, "❌ 你当前没有在押镖！"
+        await self.db.add_player_gold(user_id, escort_gold)
+        await self.db.add_player_exp(user_id, escort_exp)
+        await self.db.conn.execute(
+            "UPDATE players SET karma = karma + 1 WHERE user_id = ?",  # 护镖有功，功德+1
+            (user_id,)
+        )
+        await self.db.conn.commit()
+        # 接单冷却（10分钟）
+        await self.db.ext.set_system_config(f"escort_cd_{user_id}", str(int(time.time()) + 600))
+
+        return True, (
+            f"🎉 押镖成功！\n"
+            f"━━━━━━━━━━━━━━━\n"
+            f"你平安将镖车护送到了目的地！\n"
+            f"获得镖银：+{escort_gold:,} 灵石\n"
+            f"获得酬劳：+{escort_exp:,} 修为\n"
+            f"✨ 护镖有功，功德 +1（当前 {player.karma + 1}）"
+        )
+
+    async def quit_escort(self, player: Player) -> Tuple[bool, str]:
+        """放弃押镖（无收益）"""
+        user_cd = await self.db.ext.get_user_cd(player.user_id)
+        if not user_cd or user_cd.type != UserStatus.DELIVERING:
+            return False, "❌ 你当前没有在押镖！"
+        # v3.25.5：原子置空闲（防并发双触发），且放弃也进入接单冷却
+        #（防反复接/弃重掷镖银随机数）
+        if not await self.db.ext.claim_user_free_if_type(player.user_id, UserStatus.DELIVERING):
+            return False, "❌ 你当前没有在押镖！"
+        await self.db.ext.set_system_config(f"escort_cd_{player.user_id}", str(int(time.time()) + 300))
+        return True, "🏃 你扔下镖车跑路了...镖局震怒，本次押镖无任何收益。（5 分钟内不能再接新镖）"
+
+    async def rob_escort(self, attacker: Player, target_id: str) -> Tuple[bool, str]:
+        """劫镖：消耗迷神香，与押镖人强制PVP，胜者抢走部分镖银"""
+        if attacker.user_id == target_id:
+            return False, "❌ 不能劫自己的镖。"
+
+        if attacker.level_index < self.MIN_LEVEL:
+            return False, f"❌ 劫镖需要达到境界等级 {self.MIN_LEVEL}。"
+
+        target = await self.db.get_player_by_id(target_id)
+        if not target:
+            return False, "❌ 对方还未踏入修仙之路。"
+
+        target_cd = await self.db.ext.get_user_cd(target_id)
+        if not target_cd or target_cd.type != UserStatus.DELIVERING:
+            return False, "❌ 对方当前没有在押镖！"
+
+        if not self.storage_ring_mgr.has_item(attacker, self.ROB_ITEM, 1):
+            return False, f"❌ 劫镖需要消耗【{self.ROB_ITEM}】x1，你的储物戒里没有。"
+
+        # 劫镖冷却（10分钟）
+        cd_key = f"escort_rob_cd_{attacker.user_id}"
+        cd_value = await self.db.ext.get_system_config(cd_key)
+        now_ts = int(time.time())
+        if cd_value and cd_value.isdigit() and now_ts < int(cd_value):
+            remain = int(cd_value) - now_ts
+            return False, f"❌ 劫镖调息中，请 {remain // 60} 分 {remain % 60} 秒后再来。"
+
+        success, _ = await self.storage_ring_mgr.retrieve_item(attacker, self.ROB_ITEM, 1)
+        if not success:
+            return False, "❌ 消耗迷神香失败。"
+        await self.db.ext.set_system_config(cd_key, str(now_ts + self.ROB_COOLDOWN))
+
+        # 用天道压制引擎快速构建双方战斗属性
+        def build_stats(p: Player) -> CombatStats:
+            hp, mp = self.combat_mgr.calculate_hp_mp(p.experience)
+            atk = self.combat_mgr.calculate_atk(p.experience, p.atkpractice, 0, p.physical_damage, p.magic_damage, p.cultivation_type)
+            return CombatStats(
+                user_id=p.user_id, name=p.user_name or p.user_id[:8],
+                hp=hp, max_hp=hp, mp=mp, max_mp=mp, atk=atk,
+                element=(self.combat_mgr.get_element_from_name(p.main_technique)
+                         or self.combat_mgr.get_element_from_name(p.weapon)),
+            )
+
+        attacker_stats = build_stats(attacker)
+        target_stats = build_stats(target)
+
+        # v6.12 平衡：公平满血对决，劫镖方不再享有先手压制
+        result = self.combat_mgr.player_vs_player(attacker_stats, target_stats, combat_type=2)
+
+        extra = target_cd.get_extra_data() if hasattr(target_cd, "get_extra_data") else {}
+        escort_gold = int(extra.get("escort_gold", 2000))
+
+        log = "\n".join(result["combat_log"][-8:])  # 只展示最后8行战报，防刷屏
+
+        if result["winner"] == attacker.user_id:
+            # 事务内重读镖银并原子扣减：并发劫镖各自按原始镖银算 30% 会重复扣款
+            await self.db.begin_immediate()
+            try:
+                fresh_cd = await self.db.ext.get_user_cd(target_id)
+                fresh_extra = fresh_cd.get_extra_data() if hasattr(fresh_cd, "get_extra_data") else {}
+                fresh_gold = int(fresh_extra.get("escort_gold", 2000))
+                robbed = min(int(fresh_gold * self.ROB_WIN_CUT), fresh_gold)
+                fresh_extra["escort_gold"] = fresh_gold - robbed
+                fresh_cd.extra_data = json.dumps(fresh_extra, ensure_ascii=False)
+                # 裸 SQL 而非 ext.update_user_cd()：后者内部 commit 会击穿本事务，导致并发劫镖丢更新
+                await self.db.conn.execute(
+                    "UPDATE user_cd SET extra_data = ? WHERE user_id = ?",
+                    (fresh_cd.extra_data, target_id)
+                )
+                await self.db.conn.commit()
+            except Exception:
+                await self.db.conn.rollback()
+                raise
+
+            # 信箱：通知受害者
+            try:
+                from .enhance_systems import MailboxManager
+                await MailboxManager(self.db).send(
+                    target_id, "镖局急报",
+                    f"你的镖车被【{attacker.user_name or attacker.user_id[:8]}】劫走 {robbed:,} 灵石！"
+                    f"（/悬赏助力 或 /押镖 重建家业）"
+                )
+            except Exception:
+                pass
+
+            # v3.25.5：原子记账（不再整行覆写快照）
+            await self.db.add_player_gold(attacker.user_id, robbed)
+            await self.db.conn.execute(
+                "UPDATE players SET karma = karma - 1 WHERE user_id = ?",  # 劫镖为恶行，增加业力
+                (attacker.user_id,)
+            )
+            await self.db.conn.commit()
+
+            return True, (
+                f"{log}\n\n"
+                f"⚔️ 劫镖成功！\n"
+                f"━━━━━━━━━━━━━━━\n"
+                f"你从【{target.user_name or target_id[:8]}】的镖车上抢走 {robbed:,} 灵石！\n"
+                f"🌑 劫镖为恶行，业力 +1；劫镖调息 10 分钟"
+            )
+        else:
+            # 劫镖失败：赔偿押镖人。取"境界标准赔偿"与"镖银 60%"的较高者，
+            # 保证失败方代价随镖银水涨船高（此前满级劫镖期望收益为正）
+            compensation = max(2000 + attacker.level_index * 200, int(escort_gold * 0.6))
+            paid = min(compensation, max(0, attacker.gold))
+            if paid > 0:
+                await self.db.add_player_gold(attacker.user_id, -paid)
+                await self.db.add_player_gold(target.user_id, paid)
+                attacker.gold -= paid
+                target.gold += paid
+
+            short_note = f"\n💸 灵石不足，实际赔付 {paid:,}（应赔 {compensation:,}）。" if paid < compensation else ""
+            return True, (
+                f"{log}\n\n"
+                f"💀 劫镖失败！\n"
+                f"━━━━━━━━━━━━━━━\n"
+                f"你被护镖人反杀，赔偿 {paid:,} 灵石给对方。{short_note}\n"
+                f"❗ 劫镖调息 10 分钟"
+            )
