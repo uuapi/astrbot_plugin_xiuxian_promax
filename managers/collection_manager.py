@@ -123,6 +123,30 @@ class CollectionManager:
 
     # ================= 指令展示 =================
 
+    async def milestone_items(self, player: Player) -> dict:
+        """v3.52.6 收集图鉴结构化数据：档位行 + 进度，供图片卡片渲染。"""
+        owned = self.title_mgr._load_owned(player)
+        owned_count = len(owned)
+        claimed = await self._load_claimed(player.user_id)
+        rows = []
+        for ms in self.MILESTONES:
+            if ms["count"] in claimed:
+                status = "已领取"
+            elif owned_count >= ms["count"]:
+                status = "可领取"
+            else:
+                status = "未达成"
+            rows.append((status, f"集 {ms['count']} 称号",
+                         f"{ms['gold']:,} 灵石 + 修为 +{int(ms['exp'] * 100)}%"))
+        next_ms = next((ms for ms in self.MILESTONES
+                        if ms["count"] not in claimed and owned_count < ms["count"]), None)
+        return {
+            "owned": owned_count,
+            "rows": rows,
+            "next_gap": (next_ms["count"] - owned_count) if next_ms else 0,
+            "total_exp": sum(ms["exp"] for ms in self.MILESTONES if ms["count"] in claimed),
+        }
+
     async def handle_collection(self, player: Player, event):
         """/收集图鉴 指令：输出进度、各档位状态、下一档差距。"""
         try:

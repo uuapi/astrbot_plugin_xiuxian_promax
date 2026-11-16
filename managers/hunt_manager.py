@@ -103,9 +103,8 @@ class HuntManager:
             )
         return True, body
 
-    async def get_bestiary(self, player: Player) -> str:
-        """妖兽图鉴面板：收集进度 + 集齐奖励领取"""
-        uid = player.user_id
+    async def _load_seen_bodies(self, uid: str) -> list:
+        """读取已收录妖兽列表"""
         raw = await self.db.ext.get_system_config(self._bestiary_key(uid))
         try:
             seen = json.loads(raw) if raw else []
@@ -113,6 +112,34 @@ class HuntManager:
                 seen = []
         except (json.JSONDecodeError, TypeError):
             seen = []
+        return seen
+
+    async def maybe_claim_bestiary(self, player: Player) -> str:
+        """图鉴集齐时原子领取奖励；返回奖励提示（未集齐/已领取返回空串）"""
+        uid = player.user_id
+        seen = await self._load_seen_bodies(uid)
+        if len(seen) < len(self.BODIES):
+            return ""
+        claimed = await self.db.ext.syscfg_claim_slot(f"bestiary_done_{uid}", 1)
+        if claimed:
+            await self.db.add_player_gold(uid, self.BESTIARY_REWARD)
+            return f"🎉 图鉴集齐！天道嘉奖 {self.BESTIARY_REWARD:,} 灵石（已发放）"
+        return "🎉 图鉴已集齐，奖励已领取"
+
+    async def bestiary_items(self, player: Player) -> dict:
+        """v3.52.6 妖兽图鉴结构化数据：供图片卡片网格渲染。"""
+        seen = await self._load_seen_bodies(player.user_id)
+        return {
+            "total": len(self.BODIES),
+            "collected": len(seen),
+            "items": [{"t": b, "on": b in seen} for b in self.BODIES],
+            "reward": self.BESTIARY_REWARD,
+        }
+
+    async def get_bestiary(self, player: Player) -> str:
+        """妖兽图鉴面板：收集进度 + 集齐奖励领取"""
+        uid = player.user_id
+        seen = await self._load_seen_bodies(uid)
         total = len(self.BODIES)
         collected = len(seen)
         lines = [
@@ -124,13 +151,9 @@ class HuntManager:
             mark = "✅" if body in seen else "❔"
             lines.append(f"  {mark} {body}")
         lines.append("━━━━━━━━━━━━━━━")
-        if collected >= total:
-            claimed = await self.db.ext.syscfg_claim_slot(f"bestiary_done_{uid}", 1)
-            if claimed:
-                await self.db.add_player_gold(uid, self.BESTIARY_REWARD)
-                lines.append(f"🎉 图鉴集齐！天道嘉奖 {self.BESTIARY_REWARD:,} 灵石（已发放）")
-            else:
-                lines.append("🎉 图鉴已集齐，奖励已领取")
+        claim_msg = await self.maybe_claim_bestiary(player)
+        if claim_msg:
+            lines.append(claim_msg)
         else:
             lines.append(f"💡 /除妖 遭遇新物种即自动收录，集齐 {total} 种奖励 {self.BESTIARY_REWARD:,} 灵石")
         return "\n".join(lines)

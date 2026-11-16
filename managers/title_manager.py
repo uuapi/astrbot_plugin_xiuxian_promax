@@ -227,6 +227,25 @@ class TitleManager:
         player.title = clean_name
         return True, f"已佩戴称号【{clean_name}】。"
 
+    def collection_items(self, player: Player) -> dict:
+        """v3.52.6 称号图鉴结构化数据：供图片卡片网格渲染。"""
+        owned = self._load_owned(player)
+        active = self.get_active_title(player)
+        by_tier = {}
+        for t in TITLES:
+            by_tier.setdefault(t["tier"], []).append(t)
+        tiers = []
+        for tier in sorted(by_tier):
+            tier_name = TIERS.get(tier, (f"未知({tier})",))[0]
+            cells = [
+                {"t": t["name"], "on": t["name"] in owned,
+                 "star": bool(active and active.get("name") == t["name"])}
+                for t in by_tier[tier]
+            ]
+            tiers.append((tier_name, cells))
+        owned_count = len([n for n in owned if n in self.titles])
+        return {"total": len(TITLES), "owned": owned_count, "tiers": tiers}
+
     def collection_view(self, player: Player) -> str:
         """称号图鉴"""
         owned = self._load_owned(player)

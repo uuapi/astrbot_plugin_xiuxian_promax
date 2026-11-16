@@ -8,16 +8,16 @@
 
 <br>
 
-<a href="https://github.com/uuapi/astrbot_plugin_xiuxian_promax/releases"><img src="https://img.shields.io/badge/Version-v3.52.5-D4AF37?style=flat-square&labelColor=1a1a2e" alt="Version"/></a>
+<a href="https://github.com/uuapi/astrbot_plugin_xiuxian_promax/releases"><img src="https://img.shields.io/badge/Version-v3.52.6-D4AF37?style=flat-square&labelColor=1a1a2e" alt="Version"/></a>
 <a href="https://www.python.org/"><img src="https://img.shields.io/badge/Python-3.10+-3776AB?style=flat-square&logo=python&logoColor=white" alt="Python"/></a>
 <a href="https://github.com/AstrBotDevs/AstrBot"><img src="https://img.shields.io/badge/AstrBot-3.4+-FF6B35?style=flat-square" alt="AstrBot"/></a>
-<a href="https://github.com/uuapi/astrbot_plugin_xiuxian_promax/actions"><img src="https://img.shields.io/badge/Tests-177%20Passing-2EA043?style=flat-square&logo=githubactions&logoColor=white" alt="Tests"/></a>
+<a href="https://github.com/uuapi/astrbot_plugin_xiuxian_promax/actions"><img src="https://img.shields.io/badge/Tests-182%20Passing-2EA043?style=flat-square&logo=githubactions&logoColor=white" alt="Tests"/></a>
 <a href="LICENSE"><img src="https://img.shields.io/badge/License-AGPL--3.0-1F6FEB?style=flat-square" alt="License"/></a>
 <a href="https://github.com/uuapi/astrbot_plugin_xiuxian_promax/stargazers"><img src="https://img.shields.io/github/stars/uuapi/astrbot_plugin_xiuxian_promax?style=flat-square&color=gold" alt="Stars"/></a>
 
 <br>
 
-**267 指令** · **43 管理器** · **25+ 玩法系统** · **177 项自动化测试** · **零已知缺陷**
+**267 指令** · **43 管理器** · **25+ 玩法系统** · **182 项自动化测试** · **零已知缺陷**
 
 [功能特色](#-功能特色) · [快速上手](#-快速上手) · [指令大全](#-指令大全) · [架构设计](#-架构设计) · [测试](#-测试) · [版本历程](#-版本历程) · [配置](#%EF%B8%8F-配置) · [贡献](#-贡献)
 
@@ -361,7 +361,7 @@ astrbot_plugin_xiuxian_promax/
 │
 ├── config/                        # 游戏数值配置（17 个 JSON）
 ├── resources/                     # 图片资源（字体+背景）
-├── tests/                         # 测试套件（177 项，含 268 指令 E2E）
+├── tests/                         # 测试套件（182 项，含 268 指令 E2E）
 └── scripts/                       # 开发脚本
 ```
 
@@ -402,7 +402,7 @@ astrbot_plugin_xiuxian_promax/
 | 编译（145 个 .py） | ✅ 0 错误 |
 | AST 语法检查 | ✅ ALL SYNTAX OK |
 | 静态 12 类规则 | ✅ 0 残留 |
-| 单元 + 集成 + 并发回归 + 268 指令 E2E | ✅ **177/177 OK** |
+| 单元 + 集成 + 并发回归 + 268 指令 E2E | ✅ **182/182 OK** |
 | 指令覆盖 | ✅ 268 条 · 缺失 0 |
 | 导入烟测（30 模块） | ✅ 30/30 |
 
@@ -448,7 +448,7 @@ ruff check . --select F821,F823,F401,F841,B007,E722,E711,E712,E731,E741,F541,E40
 
 | 分组 | 配置项数 | 说明 |
 |:---|:---|:---|
-| 🖼️ 图片卡片 | 15 | 控制各面板是否渲染图片卡片（新增排行/宗门/银行/突破开关） |
+| 🖼️ 图片卡片 | 21 | 控制各面板是否渲染图片卡片（排行/宗门/银行/突破/图鉴/成就/回忆录） |
 | 🔐 访问控制 | 3 | 白名单群号 + Boss/商店管理员 |
 | ⚙️ 核心数值 | 10 | 初始灵石/修为速率/签到/死亡概率/商店/银行 |
 | 🗼 镇妖塔 | 3 | 每日挑战/扫荡次数/收益比例 |
@@ -531,6 +531,7 @@ ruff check . --select F821,F823,F401,F841,B007,E722,E711,E712,E731,E741,F541,E40
 | **v3.52.3** | 🔧 并发加固 | 最后 48 处整行写回全部转为原子字段更新（S1 风险清零）+ 新增条件扣款原子方法 + 14 个并发回归测试 + 26 模块补齐 `__all__` |
 | **v3.52.4** | 🧪 全量指令测试 | 268 条指令五层验证（注册/帮助/接线/行为/并发）：帮助覆盖 100%、接线零悬空、E2E 流程测试 54 用例新增，总计 175 项测试 |
 | **v3.52.5** | 🖼️ 卡片扩展 | 第一批 9 条指令卡片化：六大排行（状元/榜眼/探花）+ 我的宗门 + 银行 + 突破信息；新增 5 个卡片开关（总数 15）+ 修复 OpenMoji 缺字豆腐块 |
+| **v3.52.6** | 🖼️ 图鉴卡片 | 第二批 6 条指令卡片化：渲染器新增网格布局（锁定灰格？？？/解锁金格/★生效中）；称号图鉴按品阶分格 + 妖兽图鉴 + 收集档位 + 套装鉴识 + 成就 + 回忆录；卡片开关总数 21 |
 
 </details>
 
@@ -547,7 +548,7 @@ cd astrbot_plugin_xiuxian_promax
 pip install ruff pyflakes
 
 # 提交前必须通过
-python -m unittest discover -s tests         # 177 项测试
+python -m unittest discover -s tests         # 182 项测试
 python scripts/check_syntax.py               # 语法检查
 ruff check . --select F821,F823,F401,F841,B007,E722  # Lint
 python scripts/_final_check.py               # 指令覆盖审计

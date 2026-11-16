@@ -2846,7 +2846,29 @@ class XiuXianPlugin(Star):
         if not player:
             yield event.plain_result("❌ 道友尚未踏入仙途。")
             return
-        yield event.plain_result(await self.hunt_mgr.get_bestiary(player))
+        text = await self.hunt_mgr.get_bestiary(player)
+        # ===== v3.52.6 图片卡片：网格图鉴，已收录亮格 / 未收录灰格 =====
+        try:
+            from .utils.image_generator import render_card_async, card_enabled
+            if card_enabled("CARD_BESTIARY"):
+                data = await self.hunt_mgr.bestiary_items(player)
+                claim_msg = await self.hunt_mgr.maybe_claim_bestiary(player)
+                sections = [
+                    {"name": "妖兽图谱", "grid": data["items"], "grid_cols": 4},
+                ]
+                footer = claim_msg or f"/除妖 遭遇新物种即自动收录 · 集齐 {data['total']} 种奖励 {data['reward']:,} 灵石"
+                card_path = await render_card_async(
+                    "spirit", "妖兽图鉴",
+                    f"收集进度 {data['collected']}/{data['total']}",
+                    sections=sections,
+                    footer=footer,
+                )
+                if card_path:
+                    yield event.image_result(card_path)
+                    return
+        except Exception as e:
+            logger.warning(f"妖兽图鉴卡片生成失败（已降级文本）: {e}")
+        yield event.plain_result(text)
 
     # ===== v3.28.0 顿悟与道心 =====
     @filter.command("悟道", "查看道心与顿悟状态（出关可触发顿悟）")
@@ -2954,7 +2976,15 @@ class XiuXianPlugin(Star):
         if not player:
             yield event.plain_result("❌ 道友尚未踏入仙途。")
             return
-        yield event.plain_result(await self.memoir_mgr.get_memoir(player))
+        text = await self.memoir_mgr.get_memoir(player)
+        # ===== v3.52.6 图片卡片：生涯年报整行渲染 =====
+        async for r in self.send_text_card(
+            event, text, "info", "仙途回忆录",
+            f"{player.user_name or '道友'} 的修行生涯",
+            footer="战斗 / 积累 / 生活全览 · 数据随玩法实时累计",
+            card_key="CARD_MEMOIR",
+        ):
+            yield r
 
     # ===== v3.35.0 妖兽巢穴入侵 =====
     @filter.command("开启巢穴入侵", "管理员开启全服妖兽巢穴防御战（30分钟）")
@@ -3278,7 +3308,28 @@ class XiuXianPlugin(Star):
         if not player:
             yield event.plain_result("❌ 道友尚未踏入仙途。")
             return
-        yield event.plain_result(self.equip_sets.panel(player))
+        text = self.equip_sets.panel(player)
+        # ===== v3.52.6 图片卡片：已触发套装 + 已知套装分区 =====
+        try:
+            from .utils.image_generator import render_card_async, card_enabled
+            if card_enabled("CARD_EQUIPSET"):
+                items = self.equip_sets.panel_items(player)
+                sections = [
+                    {"name": "已触发套装",
+                     "rows": items["triggered"] or [("—", "未触发任何套装，可凑齐同前缀装备")]},
+                    {"name": "已知套装", "rows": items["known"]},
+                ]
+                card_path = await render_card_async(
+                    "combat", "套装鉴识", f"{player.user_name or '道友'} 的装备套装",
+                    sections=sections,
+                    footer="同名前缀的武器/防具/心法同时穿戴即可触发",
+                )
+                if card_path:
+                    yield event.image_result(card_path)
+                    return
+        except Exception as e:
+            logger.warning(f"装备图鉴卡片生成失败（已降级文本）: {e}")
+        yield event.plain_result(text)
 
     # ===== v6.17 称号系统 =====
     # ===== v6.20 新手七日仙途 =====
@@ -3310,21 +3361,46 @@ class XiuXianPlugin(Star):
         if not player:
             yield event.plain_result("❌ 道友尚未踏入仙途。")
             return
-            
+
+        sync_msg = ""
         try:
             # 1. 触发历史称号校验补齐
-            sync_msg = await self.title_mgr.sync_missing_titles(player)
-            
+            sync_msg = await self.title_mgr.sync_missing_titles(player) or ""
+        except Exception as e:
+            logger.exception(f"称号图鉴补齐失败 uid={player.user_id}: {e}")
+
+        text = ""
+        try:
             # 2. 渲染图鉴
             text = self.title_mgr.collection_view(player)
-            
-            # 3. 如果有补发，附加提示
             if sync_msg:
                 text += sync_msg
         except Exception as e:
             logger.exception(f"称号图鉴渲染失败 uid={player.user_id}: {e}")
             text = "❌ 称号图鉴读取失败，请稍后再试。"
-            
+
+        # ===== v3.52.6 图片卡片：按品阶网格渲染，锁定称号灰显问号 =====
+        try:
+            from .utils.image_generator import render_card_async, card_enabled
+            if card_enabled("CARD_TITLE_CODEX"):
+                data = self.title_mgr.collection_items(player)
+                sections = [
+                    {"name": f"{tier_name}（{sum(1 for c in cells if c['on'])}/{len(cells)}）",
+                     "grid": cells, "grid_cols": 4}
+                    for tier_name, cells in data["tiers"]
+                ]
+                card_path = await render_card_async(
+                    "craft", "称号图鉴",
+                    f"已收集 {data['owned']}/{data['total']} · ★ 为生效中",
+                    sections=sections,
+                    footer="/佩戴称号 <名> 更换展示 · 加成按最高品阶自动生效",
+                )
+                if card_path:
+                    yield event.image_result(card_path)
+                    return
+        except Exception as e:
+            logger.warning(f"称号图鉴卡片生成失败（已降级文本）: {e}")
+
         # 修复了原代码这里重复调用 collection_view 导致兜底失效的 Bug
         yield event.plain_result(text)
 
@@ -3385,11 +3461,18 @@ class XiuXianPlugin(Star):
         return str(r)
 
     async def send_text_card(self, event: AstrMessageEvent, text: str, bg: str,
-                             title: str, subtitle: str = "", footer: str = ""):
+                             title: str, subtitle: str = "", footer: str = "",
+                             card_key: str = None):
         """把多行文本渲染成卡片发送；渲染失败/关闭时回退原文。
         自动剔除 ━ 分隔线与首行同义标题（v3.25.1 改为精确同义，保留"第X届"等附加信息）。
-        v3.25.1：上限提到 40 行，超出时在卡片尾部明确提示截断。"""
+        v3.25.1：上限提到 40 行，超出时在卡片尾部明确提示截断。
+        v3.52.6：card_key 提供后受 IMAGE_CARDS 对应开关控制（None 保持旧行为总是渲染）。"""
         try:
+            if card_key:
+                from .utils.image_generator import card_enabled
+                if not card_enabled(card_key):
+                    yield event.plain_result(text)
+                    return
             # v3.25.3 修复：`..utils` 相对导入越界（v3.24 搬回遗留），卡片生成静默失败
             from .utils.image_generator import render_card_async
             lines = [ln.rstrip() for ln in (text or "").splitlines()]
@@ -3421,9 +3504,9 @@ class XiuXianPlugin(Star):
             logger.error(f"【修仙插件】卡片生成失败（已回退文本）: {e}")
         yield event.plain_result(text)
 
-    async def _board_card(self, event, text: str, bg: str, title: str, subtitle: str = "", footer: str = ""):
+    async def _board_card(self, event, text: str, bg: str, title: str, subtitle: str = "", footer: str = "", card_key: str = None):
         """面板类文本 → 卡片（CardMixin.send_text_card 的薄封装）"""
-        async for r in self.send_text_card(event, text, bg, title, subtitle, footer):
+        async for r in self.send_text_card(event, text, bg, title, subtitle, footer, card_key):
             yield r
 
     # ===== v3.19.0 新玩法指令 =====
@@ -3442,8 +3525,31 @@ class XiuXianPlugin(Star):
             yield event.plain_result("❌ 道友尚未踏入仙途。")
             return
         grant_msg = await self.collection_mgr.check_and_grant(player)
-        async for r in self.collection_mgr.handle_collection(player, event):
-            yield r
+        # ===== v3.52.6 图片卡片：档位行渲染，失败降级原文本流程 =====
+        card_yielded = False
+        try:
+            from .utils.image_generator import render_card_async, card_enabled
+            if card_enabled("CARD_COLLECTION"):
+                data = await self.collection_mgr.milestone_items(player)
+                rows = [(f"{status} · {label}", detail) for status, label, detail in data["rows"]]
+                next_line = (f"还差 {data['next_gap']} 个称号达成下一档"
+                             if data["next_gap"] else "全部档位奖励已领取")
+                card_path = await render_card_async(
+                    "craft", "图鉴收集计划",
+                    f"当前称号 {data['owned']} 个 · 下一档 {next_line}",
+                    sections=[{"name": "收集档位", "rows": rows}],
+                    footer=(f"图鉴加成：永久修为 +{int(data['total_exp'] * 100)}% · 称号经突破/历练/决斗获得"
+                            if data["total_exp"] else
+                            "称号经突破/历练/决斗获得 · /称号图鉴 查看"),
+                )
+                if card_path:
+                    yield event.image_result(card_path)
+                    card_yielded = True
+        except Exception as e:
+            logger.warning(f"收集图鉴卡片生成失败（已降级文本）: {e}")
+        if not card_yielded:
+            async for r in self.collection_mgr.handle_collection(player, event):
+                yield r
         if grant_msg:
             yield event.plain_result(grant_msg)
 
@@ -3784,7 +3890,8 @@ class XiuXianPlugin(Star):
             return
         msg = await self.achievement_mgr.handle_list(player, event)
         async for r in self._board_card(event, msg, "ach", "🏅 修仙成就", "里程碑 · 一期一会",
-                                        footer="成就领取 <编号> · 不可重复领取"):
+                                        footer="成就领取 <编号> · 不可重复领取",
+                                        card_key="CARD_ACHIEVE"):
             yield r
 
     @filter.command("成就领取", "领取已达成的成就奖励：/成就领取 <编号>")

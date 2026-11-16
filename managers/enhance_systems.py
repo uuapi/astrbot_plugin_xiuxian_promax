@@ -53,6 +53,17 @@ class EquipSetManager:
                 total[k] = total.get(k, 0) + v
         return total
 
+    def panel_items(self, player: Player) -> dict:
+        """v3.52.6 套装鉴识结构化数据：供图片卡片渲染。"""
+        triggered = self.match_sets(player)
+        trig_rows = []
+        for entry in triggered:
+            perk = entry["perk3"] if entry["count"] >= 3 else entry["perk2"]
+            trig_rows.append((f"{entry['name']}（{entry['count']}件）", perk))
+        known_rows = [(s["name"], f"{s['prefix']}系列 · 2件:{s['perk2']} / 3件:{s['perk3']}")
+                      for s in self.SETS]
+        return {"triggered": trig_rows, "known": known_rows}
+
     def panel(self, player: Player) -> str:
         """套装面板（/装备图鉴 内嵌或独立查看）"""
         equipped = [player.weapon or "", player.armor or "", player.main_technique or ""]

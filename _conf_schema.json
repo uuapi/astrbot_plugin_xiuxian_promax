@@ -22,7 +22,13 @@
       "CARD_RANK_SECT": { "description": "宗门贡献排行卡片", "type": "bool", "default": true, "hint": "/贡献排行 追加图片卡片。" },
       "CARD_SECT": { "description": "我的宗门卡片", "type": "bool", "default": true, "hint": "/我的宗门 追加图片卡片。" },
       "CARD_BANK": { "description": "银行卡片", "type": "bool", "default": true, "hint": "/银行 追加图片卡片（含贷款分区）。" },
-      "CARD_BT_INFO": { "description": "突破信息卡片", "type": "bool", "default": true, "hint": "/突破信息 追加图片卡片（成功率加成明细）。" }
+      "CARD_BT_INFO": { "description": "突破信息卡片", "type": "bool", "default": true, "hint": "/突破信息 追加图片卡片（成功率加成明细）。" },
+      "CARD_TITLE_CODEX": { "description": "称号图鉴卡片", "type": "bool", "default": true, "hint": "/称号图鉴 按品阶网格渲染，锁定称号灰显。" },
+      "CARD_BESTIARY": { "description": "妖兽图鉴卡片", "type": "bool", "default": true, "hint": "/妖兽图鉴 网格渲染，已收录亮格。" },
+      "CARD_COLLECTION": { "description": "收集档位卡片", "type": "bool", "default": true, "hint": "/收集图鉴 档位进度渲染。" },
+      "CARD_EQUIPSET": { "description": "套装鉴识卡片", "type": "bool", "default": true, "hint": "/装备图鉴 已触发与已知套装分区。" },
+      "CARD_ACHIEVE": { "description": "成就卡片", "type": "bool", "default": true, "hint": "/成就 渲染为图片卡片。" },
+      "CARD_MEMOIR": { "description": "回忆录卡片", "type": "bool", "default": true, "hint": "/回忆录 生涯年报渲染为图片卡片。" }
     }
   },
   "ACCESS_CONTROL": {

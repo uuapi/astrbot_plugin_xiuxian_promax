@@ -434,6 +434,11 @@ def render_card(
                 max_value_w = max(max_value_w, vw, lw + 30)
             body_height += row_h * len(sec.get("rows", []))
             body_height += row_h * len(sec.get("lines", []))
+            grid = sec.get("grid") or []
+            if grid:
+                cols = max(2, int(sec.get("grid_cols", 4)))
+                grid_rows = (len(grid) + cols - 1) // cols
+                body_height += grid_rows * 62 + 14   # v3.52.6：网格单元 62px/行
             body_height += section_gap + 44   # v3.25.0：每个区块独立子面板的上下留白
         # 数值列宽 = min(最长数值, 上限)，且保证字段列 >= 最低占比
         value_col = int(min(max(max_value_w, content_w * 0.40), content_w * VALUE_RATIO_MAX))
@@ -565,6 +570,38 @@ def render_card(
                 _draw_mixed(canvas, (label_x + 6, y_cursor), line_s, f_value, emoji_px_val, INK_TEXT)
                 draw = ImageDraw.Draw(canvas)
                 y_cursor += row_h
+
+            # ===== v3.52.6 图鉴网格：格子 unlocked 金框亮字 / locked 暗框问号 =====
+            grid = sec.get("grid") or []
+            if grid:
+                cols = max(2, int(sec.get("grid_cols", 4)))
+                cell_w = (panel_x1 - panel_x0 - 36 - (cols - 1) * 10) // cols
+                cell_h = 52
+                f_cell = _load_font(22)
+                for gi, cell in enumerate(grid):
+                    gx = panel_x0 + 18 + (gi % cols) * (cell_w + 10)
+                    gy = y_cursor + (gi // cols) * 62
+                    on = bool(cell.get("on"))
+                    txt = str(cell.get("t", ""))
+                    star = bool(cell.get("star"))
+                    if on:
+                        border = (232, 196, 122, 200)
+                        fill = (232, 196, 122, 42)
+                        tcol = (242, 220, 168, 255)
+                    else:
+                        border = (140, 142, 152, 56)
+                        fill = (255, 255, 255, 4)
+                        tcol = (138, 140, 150, 105)
+                        txt = "？？？"
+                    draw.rounded_rectangle([gx, gy, gx + cell_w, gy + cell_h], radius=10,
+                                           fill=fill, outline=border, width=1)
+                    cell_s = _trunc(draw, txt, f_cell, cell_w - 14)
+                    cw = draw.textlength(cell_s, font=f_cell)
+                    _draw_mixed(canvas, (gx + (cell_w - cw) / 2, gy + 13), cell_s, f_cell, 22, tcol)
+                    if star:
+                        draw.text((gx + cell_w - 20, gy + 2), "★", font=f_cell, fill=(255, 214, 110, 230))
+                    draw = ImageDraw.Draw(canvas)
+                y_cursor += ((len(grid) + cols - 1) // cols) * 62 + 14
 
             y_cursor += section_gap + 30
 

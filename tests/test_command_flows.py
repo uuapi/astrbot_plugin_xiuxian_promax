@@ -125,6 +125,10 @@ BossManager = _imp("managers.boss_manager").BossManager
 ReincarnationManager = _imp("managers.reincarnation_manager").ReincarnationManager
 WorldBossManager = _imp("managers.world_boss_manager").WorldBossManager
 StorageRingManager = _imp("core.storage_ring_manager").StorageRingManager
+TitleManager = _imp("managers.title_manager").TitleManager
+HuntManager = _imp("managers.hunt_manager").HuntManager
+CollectionManager = _imp("managers.collection_manager").CollectionManager
+EquipSetManager = _imp("managers.enhance_systems").EquipSetManager
 
 
 class FakeEvent:
@@ -235,6 +239,10 @@ class FlowEnv:
         self.reinc = ReincarnationHandlers(self.db, ReincarnationManager(self.db, self.cm, ring_mgr))
         self.wb = WorldBossHandlers(self.db, WorldBossManager(self.db, self.cm, ring_mgr))
         self.bt = BreakthroughHandler(self.db, self.cm, self.config)
+        self.title_mgr = TitleManager(self.db)
+        self.hunt_mgr = HuntManager(self.db, self.cm, ring_mgr)
+        self.collection_mgr = CollectionManager(self.db, self.title_mgr)
+        self.equip_sets = EquipSetManager(self.db)
         return self
 
     async def __aexit__(self, *exc):
@@ -996,6 +1004,81 @@ class TestBreakthroughCard(unittest.IsolatedAsyncioTestCase):
                 "[image]" in ev.text or "突破" in ev.text,
                 "突破信息必须出卡片或文本",
             )
+
+
+class TestCodexCards(unittest.IsolatedAsyncioTestCase):
+    """v3.52.6 图鉴类结构化数据 + 网格渲染"""
+
+    async def _env_with_title(self, env, uid="cx_1"):
+        await env.new_player(uid)
+        return uid
+
+    async def test_title_collection_items(self):
+        async with FlowEnv() as env:
+            uid = await self._env_with_title(env)
+            data = env.title_mgr.collection_items(await env.get_player(uid))
+            self.assertGreater(data["total"], 0, "称号总数必须大于0")
+            self.assertEqual(data["owned"], 0, "新玩家未拥有称号")
+            self.assertTrue(data["tiers"], "必须按品阶分组")
+            all_cells = [c for _, cells in data["tiers"] for c in cells]
+            self.assertTrue(all(set(c.keys()) == {"t", "on", "star"} for c in all_cells))
+
+    async def test_bestiary_items_and_claim(self):
+        async with FlowEnv() as env:
+            uid = await self._env_with_title(env, "cx_2")
+            p = await env.get_player(uid)
+            data = await env.hunt_mgr.bestiary_items(p)
+            self.assertEqual(data["collected"], 0)
+            self.assertEqual(len(data["items"]), data["total"])
+            self.assertEqual(await env.hunt_mgr.maybe_claim_bestiary(p), "", "未集齐不得发奖")
+
+            # 收录全部妖兽 → 首次领取有奖励提示，二次领取幂等
+            import json as _json
+            all_bodies = _json.dumps([it["t"] for it in data["items"]], ensure_ascii=False)
+            await env.db.ext.set_system_config(env.hunt_mgr._bestiary_key(uid), all_bodies)
+            msg1 = await env.hunt_mgr.maybe_claim_bestiary(p)
+            self.assertIn("灵石", msg1, "集齐首次必须发奖")
+            gold1 = (await env.get_player(uid)).gold
+            msg2 = await env.hunt_mgr.maybe_claim_bestiary(p)
+            self.assertIn("已领取", msg2, "重复领取必须幂等")
+            gold2 = (await env.get_player(uid)).gold
+            self.assertEqual(gold1, gold2, "重复领取不得重复发奖")
+
+    async def test_milestone_items(self):
+        async with FlowEnv() as env:
+            uid = await self._env_with_title(env, "cx_3")
+            data = await env.collection_mgr.milestone_items(await env.get_player(uid))
+            self.assertEqual(len(data["rows"]), 4, "四个档位")
+            self.assertEqual(data["next_gap"], 10, "新玩家距首档差10个称号")
+            statuses = {r[0] for r in data["rows"]}
+            self.assertIn("未达成", statuses)
+
+    async def test_panel_items(self):
+        async with FlowEnv() as env:
+            uid = await self._env_with_title(env, "cx_4")
+            p = await env.get_player(uid)
+            items = env.equip_sets.panel_items(p)
+            self.assertEqual(items["triggered"], [], "未装备不触发套装")
+            self.assertEqual(len(items["known"]), len(env.equip_sets.SETS), "已知套装必须全列")
+
+    async def test_grid_render(self):
+        """渲染器 grid 段类型：锁定灰格 + 解锁金格 + 星标，能产出图片文件"""
+        import os
+        from utils.image_generator import render_card
+        path = render_card(
+            "craft", "网格测试", "3/5 已收集",
+            sections=[{"name": "测试图谱", "grid_cols": 3, "grid": [
+                {"t": "金丹", "on": True, "star": True},
+                {"t": "元婴", "on": True},
+                {"t": "化神", "on": False},
+                {"t": "渡劫", "on": False},
+                {"t": "大乘", "on": False},
+            ]}],
+            footer="网格渲染单元测试",
+        )
+        self.assertIsNotNone(path, "网格卡片必须渲染成功（本环境已装 PIL）")
+        self.assertTrue(os.path.exists(path))
+        os.remove(path)
 
 
 class TestUnjam(unittest.IsolatedAsyncioTestCase):
