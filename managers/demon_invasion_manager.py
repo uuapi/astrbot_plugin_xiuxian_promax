@@ -6,6 +6,8 @@ from typing import Tuple
 from ..data import DataBase
 from ..models import Player
 
+__all__ = ["DemonInvasionManager"]
+
 class DemonInvasionManager:
     """天魔入侵管理器"""
     

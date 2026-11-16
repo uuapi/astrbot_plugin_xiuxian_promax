@@ -57,7 +57,7 @@ class NicknameHandler:
         
         old_name = player.user_name if player.user_name else "无"
         player.user_name = new_name
-        await self.db.update_player(player)
+        await self.db.update_player_fields(player.user_id, user_name=new_name)
         
         yield event.plain_result(
             "✅ 道号修改成功！\n"

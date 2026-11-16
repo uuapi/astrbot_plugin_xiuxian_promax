@@ -7,6 +7,8 @@ from typing import List, Dict, Optional
 from astrbot.api import AstrBotConfig, logger
 from ..config_manager import ConfigManager
 
+__all__ = ["ShopManager"]
+
 class ShopManager:
     """商店管理器，负责商店物品生成、刷新和购买"""
 

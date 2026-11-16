@@ -11,6 +11,8 @@ from ..data.data_manager import DataBase
 from ..models_extended import UserStatus
 from ..models import Player
 
+__all__ = ["RiftManager"]
+
 if TYPE_CHECKING:
     from ..core import StorageRingManager
 

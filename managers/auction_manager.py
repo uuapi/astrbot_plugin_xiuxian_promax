@@ -5,6 +5,8 @@ from astrbot.api import logger
 from ..data import DataBase
 from ..models import Player
 
+__all__ = ["AuctionManager"]
+
 class AuctionManager:
     """玩家交易坊市管理器"""
     

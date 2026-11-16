@@ -269,7 +269,7 @@ class EquipmentHandler:
                 if store_success:
                     storage_msg = "\n已存入储物戒"
                 else:
-                    storage_msg = f"\n⚠️ 存入储物戒失败：{store_msg}"
+                    storage_msg = f"\n❌ 存入储物戒失败：{store_msg}"
 
             yield event.plain_result(f"✅ {message}{storage_msg}")
         else:

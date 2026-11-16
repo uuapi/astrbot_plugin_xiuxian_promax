@@ -360,6 +360,40 @@ class DataBase:
         if commit:
             await self.conn.commit()
 
+    async def deduct_player_gold_if(self, user_id: str, amount: int, commit: bool = True) -> bool:
+        """条件原子扣款：仅当 gold >= amount 时扣款并返回 True，否则不动数据返回 False"""
+        if amount <= 0:
+            return True
+        cursor = await self.conn.execute(
+            "UPDATE players SET gold = gold - ? WHERE user_id = ? AND gold >= ?",
+            (amount, user_id, amount)
+        )
+        if commit:
+            await self.conn.commit()
+        return cursor.rowcount > 0
+
+    async def spend_player_gold_for_fields(self, user_id: str, cost: int, commit: bool = True, **fields) -> bool:
+        """条件扣款并写字段（单语句原子）：仅当 gold >= cost 时扣款并写入 fields，返回是否成功"""
+        if cost < 0:
+            return False
+        valid = {k: v for k, v in fields.items() if k in PLAYER_FIELDS}
+        if not valid:
+            return False
+        set_clause = ", ".join(f"{k} = ?" for k in valid)
+        if cost == 0:
+            cursor = await self.conn.execute(
+                f"UPDATE players SET {set_clause} WHERE user_id = ?",
+                (*valid.values(), user_id)
+            )
+        else:
+            cursor = await self.conn.execute(
+                f"UPDATE players SET gold = gold - ?, {set_clause} WHERE user_id = ? AND gold >= ?",
+                (cost, *valid.values(), user_id, cost)
+            )
+        if commit:
+            await self.conn.commit()
+        return cursor.rowcount > 0
+
     async def delete_player(self, user_id: str):
         """删除玩家"""
         await self.conn.execute(

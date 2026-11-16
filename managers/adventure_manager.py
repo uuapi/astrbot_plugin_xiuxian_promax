@@ -15,6 +15,8 @@ from ..data.data_manager import DataBase
 from ..models import Player
 from ..models_extended import UserStatus
 
+__all__ = ["AdventureManager"]
+
 if TYPE_CHECKING:
     from ..core import StorageRingManager
 
@@ -409,8 +411,9 @@ class AdventureManager:
             player.experience += rewards["exp"]
             player.gold += rewards["gold"]
 
-            # 一次更新玩家对象
-            await self.db.update_player(player)
+            # 原子增减修为/灵石，避免整行写回覆盖并发字段
+            await self.db.add_player_exp(player.user_id, rewards["exp"], commit=False)
+            await self.db.add_player_gold(player.user_id, rewards["gold"], commit=False)
             await self.db.conn.commit()
         except Exception:
             await self.db.conn.rollback()

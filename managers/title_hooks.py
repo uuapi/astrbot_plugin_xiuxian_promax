@@ -6,6 +6,8 @@ from astrbot.api import logger
 from ..data.data_manager import DataBase
 from ..models import Player
 
+__all__ = ["TitleHooks"]
+
 
 class TitleHooks:
     def __init__(self, db: DataBase):

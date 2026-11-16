@@ -6,6 +6,8 @@ from astrbot.api import logger
 from ..data import DataBase
 from ..models import Player
 
+__all__ = ["WorldBossManager"]
+
 class WorldBossManager:
     """全服世界Boss管理器 - 动态水位与防膨胀机制"""
 

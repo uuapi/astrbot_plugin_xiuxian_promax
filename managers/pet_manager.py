@@ -5,6 +5,8 @@ from typing import Tuple, Dict, Optional
 from ..data import DataBase
 from ..models import Player
 
+__all__ = ["PetManager"]
+
 class PetManager:
     """灵兽管理器"""
     

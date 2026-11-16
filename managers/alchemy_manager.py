@@ -10,6 +10,8 @@ from typing import Tuple, Dict, Optional, TYPE_CHECKING
 from ..data.data_manager import DataBase
 from ..models import Player
 
+__all__ = ["AlchemyManager"]
+
 if TYPE_CHECKING:
     from ..config_manager import ConfigManager
     from ..core import StorageRingManager
@@ -368,8 +370,14 @@ class AlchemyManager:
                 else:
                     pill_name = recipe["name"]
 
-                # 这里非常重要：commit=False，由外层事务统一提交
-                await self.db.update_player(player, commit=False)
+                # 原子扣灵石 + 字段级写回储物戒/丹药背包（commit=False，由外层事务统一提交）
+                await self.db.add_player_gold(player.user_id, -required_gold, commit=False)
+                await self.db.update_player_fields(
+                    player.user_id,
+                    storage_ring_items=player.storage_ring_items,
+                    pills_inventory=player.pills_inventory,
+                    commit=False
+                )
 
                 if pill_ruined:
                     msg = f"""
@@ -427,8 +435,14 @@ class AlchemyManager:
                     "perfect": perfect
                 }
             else:
-                # 炼制失败 - 扣除材料
-                await self.db.update_player(player, commit=False)
+                # 炼制失败 - 扣除材料（原子扣灵石 + 字段级写回储物戒）
+                await self.db.add_player_gold(player.user_id, -required_gold, commit=False)
+                await self.db.update_player_fields(
+                    player.user_id,
+                    storage_ring_items=player.storage_ring_items,
+                    pills_inventory=player.pills_inventory,
+                    commit=False
+                )
                 
                 msg = f"""
 💔 炼丹失败

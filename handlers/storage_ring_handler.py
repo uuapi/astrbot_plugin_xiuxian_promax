@@ -341,7 +341,9 @@ class StorageRingHandler:
 
             if success:
                 # store_item(external_transaction=True) 只改内存，必须在事务内落库，否则物品只存在到下次重启
-                await self.db.update_player(player, commit=False)
+                await self.db.update_player_fields(
+                    player.user_id, storage_ring_items=player.storage_ring_items, commit=False
+                )
                 await self.db.conn.commit()
                 yield event.plain_result(
                     f"✅ 已接收来自【{sender_name}】的赠予！\n"

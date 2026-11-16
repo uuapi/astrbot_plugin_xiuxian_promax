@@ -7,6 +7,8 @@ from astrbot.api import AstrBotConfig, logger
 from ..config_manager import ConfigManager
 from ..models import Player
 
+__all__ = ["CultivationManager"]
+
 class CultivationManager:
     """修炼管理器，包含角色生成和闭关修炼功能"""
 

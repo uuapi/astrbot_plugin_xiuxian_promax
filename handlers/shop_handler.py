@@ -357,7 +357,7 @@ class ShopHandler:
                     result_lines.append(f"成功购买{type_name}【{target_item['name']}】x{quantity}，已存入储物戒。")
                 else:
                     result_lines.append(f"成功购买【{target_item['name']}】x{quantity}。")
-                    result_lines.append(f"⚠️ 存入储物戒失败：{msg}")
+                    result_lines.append(f"❌ 存入储物戒失败：{msg}")
             
             elif item_type == 'legacy_pill':
                 # v6.18 修复：购买的丹药存入丹药背包由玩家自行使用（不再立即生效）
@@ -375,14 +375,21 @@ class ShopHandler:
                     result_lines.append(f"成功购买材料【{target_item['name']}】x{quantity}，已存入储物戒。")
                 else:
                     result_lines.append(f"成功购买材料【{target_item['name']}】x{quantity}。")
-                    result_lines.append(f"⚠️ 存入储物戒失败：{msg}")
+                    result_lines.append(f"❌ 存入储物戒失败：{msg}")
             else:
                 await self.db.conn.rollback()
                 yield event.plain_result(f"未知的物品类型：{item_type}")
                 return
 
             player.gold -= total_price
-            await self.db.update_player(player, commit=False)
+            # 原子扣款 + 字段级写回储物戒/丹药背包（事务内，统一提交）
+            await self.db.add_player_gold(player.user_id, -total_price, commit=False)
+            await self.db.update_player_fields(
+                player.user_id,
+                storage_ring_items=player.storage_ring_items,
+                pills_inventory=player.pills_inventory,
+                commit=False
+            )
             await self.db.conn.commit()
             
             result_lines.append(f"花费灵石: {total_price}，剩余: {player.gold}")
@@ -430,6 +437,7 @@ class ShopHandler:
 
         effect_msgs = []
         pill_name = item['name']
+        gold_change = 0
 
         for _ in range(quantity):
             if 'add_hp' in effects:
@@ -483,7 +491,23 @@ class ShopHandler:
         player.spiritual_qi = min(player.spiritual_qi, player.max_spiritual_qi)
         player.blood_qi = min(player.blood_qi, player.max_blood_qi)
 
-        await self.db.update_player(player, commit=False)
+        # 字段级写回属性列（事务内，统一提交）；灵石走原子增减
+        await self.db.update_player_fields(
+            player.user_id,
+            experience=player.experience,
+            physical_damage=player.physical_damage,
+            magic_damage=player.magic_damage,
+            physical_defense=player.physical_defense,
+            magic_defense=player.magic_defense,
+            mental_power=player.mental_power,
+            spiritual_qi=player.spiritual_qi,
+            max_spiritual_qi=player.max_spiritual_qi,
+            blood_qi=player.blood_qi,
+            max_blood_qi=player.max_blood_qi,
+            commit=False
+        )
+        if gold_change:
+            await self.db.add_player_gold(player.user_id, gold_change * quantity, commit=False)
 
         unique_effects = list(dict.fromkeys(effect_msgs))
         effects_str = "、".join(unique_effects[:5])

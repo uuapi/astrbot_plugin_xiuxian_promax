@@ -5,6 +5,8 @@ from typing import Tuple
 from ..data import DataBase
 from ..models import Player
 
+__all__ = ["ReincarnationManager"]
+
 class ReincarnationManager:
     """飞升转生管理器 - 支持传家宝封印与仙缘商店"""
     
@@ -108,9 +110,39 @@ class ReincarnationManager:
         player.reincarnation_count += 1
         player.fate_points += earned_points
 
-        # 保存永久加成（含传家宝）
+        # 保存永久加成（含传家宝）——字段级写回，仅覆盖轮回确实要重置的列
         player.permanent_bonus = json.dumps(bonus_data, ensure_ascii=False)
-        await self.db.update_player(player)
+        await self.db.update_player_fields(
+            player.user_id,
+            level_index=player.level_index,
+            experience=player.experience,
+            gold=player.gold,
+            hp=player.hp,
+            mp=player.mp,
+            atk=player.atk,
+            atkpractice=player.atkpractice,
+            spiritual_qi=player.spiritual_qi,
+            max_spiritual_qi=player.max_spiritual_qi,
+            blood_qi=player.blood_qi,
+            max_blood_qi=player.max_blood_qi,
+            magic_damage=player.magic_damage,
+            physical_damage=player.physical_damage,
+            magic_defense=player.magic_defense,
+            physical_defense=player.physical_defense,
+            mental_power=player.mental_power,
+            weapon=player.weapon,
+            armor=player.armor,
+            main_technique=player.main_technique,
+            techniques=player.techniques,
+            storage_ring_items=player.storage_ring_items,
+            pills_inventory=player.pills_inventory,
+            active_pill_effects=player.active_pill_effects,
+            permanent_pill_gains=player.permanent_pill_gains,
+            tutorial_step=player.tutorial_step,
+            reincarnation_count=player.reincarnation_count,
+            fate_points=player.fate_points,
+            permanent_bonus=player.permanent_bonus,
+        )
 
         # 强制清理附属产业
         await self.db.conn.execute("DELETE FROM blessed_lands WHERE user_id = ?", (player.user_id,))

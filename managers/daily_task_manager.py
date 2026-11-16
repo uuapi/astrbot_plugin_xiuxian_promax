@@ -5,6 +5,8 @@ from typing import Tuple
 from ..data import DataBase
 from ..models import Player
 
+__all__ = ["DailyTaskManager"]
+
 class DailyTaskManager:
     """日常任务管理器"""
     
@@ -219,11 +221,10 @@ class DailyTaskManager:
             if not fresh_player:
                 await self.db.conn.rollback()
                 return False, "❌ 玩家不存在。", []
-                
-            # 发放基础奖励
-            fresh_player.experience += total_exp
-            fresh_player.gold += total_gold
-            await self.db.update_player(fresh_player, commit=False)
+
+            # 发放基础奖励（原子增减，防并发覆盖）
+            await self.db.add_player_exp(player.user_id, total_exp, commit=False)
+            await self.db.add_player_gold(player.user_id, total_gold, commit=False)
             
             await self.db.conn.commit()
             

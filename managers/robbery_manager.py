@@ -5,6 +5,8 @@ from typing import Tuple, TYPE_CHECKING
 from ..data import DataBase
 from ..models import Player
 
+__all__ = ["RobberyManager"]
+
 if TYPE_CHECKING:
     from ..core import StorageRingManager
 

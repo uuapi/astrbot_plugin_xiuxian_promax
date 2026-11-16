@@ -8,6 +8,8 @@ from ..models import Player
 from ..data import DataBase
 from ..config_manager import ConfigManager
 
+__all__ = ["PillManager"]
+
 
 class PillManager:
     """丹药管理器 - 处理丹药效果、属性加成和限制机制"""
@@ -102,7 +104,13 @@ class PillManager:
 
         if has_changes or len(updated_effects) != len(effects):
             player.set_active_pill_effects(updated_effects)
-            await self.db.update_player(player)
+            await self.db.update_player_fields(
+                player.user_id,
+                active_pill_effects=player.active_pill_effects,
+                lifespan=player.lifespan,
+                spiritual_qi=player.spiritual_qi,
+                blood_qi=player.blood_qi,
+            )
 
     async def use_pill(
         self,
@@ -219,13 +227,26 @@ class PillManager:
         if not msgs:
             return False, f"【{pill_name}】的药力配置无法解析。"
 
-        # 扣丹
+        # 扣丹（字段级写回：legacy 丹药可能触达的全部属性列，单语句原子）
         inventory = player.get_pills_inventory()
         inventory[pill_name] -= 1
         if inventory[pill_name] <= 0:
             del inventory[pill_name]
         player.set_pills_inventory(inventory)
-        await self.db.update_player(player)
+        await self.db.update_player_fields(
+            player.user_id,
+            pills_inventory=player.pills_inventory,
+            experience=player.experience,
+            gold=player.gold,
+            blood_qi=player.blood_qi,
+            max_blood_qi=player.max_blood_qi,
+            spiritual_qi=player.spiritual_qi,
+            max_spiritual_qi=player.max_spiritual_qi,
+            physical_damage=player.physical_damage,
+            magic_damage=player.magic_damage,
+            physical_defense=player.physical_defense,
+            mental_power=player.mental_power,
+        )
 
         return True, (
             "✨ 服用【" + pill_name + "】成功！\n"
@@ -249,7 +270,12 @@ class PillManager:
             del inventory[pill_name]
         player.set_pills_inventory(inventory)
 
-        await self.db.update_player(player)
+        # 单语句原子：修为发放与扣丹同条 UPDATE，避免崩溃导致"白嫖丹药"
+        await self.db.update_player_fields(
+            player.user_id,
+            experience=player.experience,
+            pills_inventory=player.pills_inventory,
+        )
 
         decay_note = ""
         if effective_exp < exp_gain:
@@ -275,7 +301,11 @@ class PillManager:
             del inventory[pill_name]
         player.set_pills_inventory(inventory)
 
-        await self.db.update_player(player)
+        await self.db.update_player_fields(
+            player.user_id,
+            has_resurrection_pill=player.has_resurrection_pill,
+            pills_inventory=player.pills_inventory,
+        )
 
         return True, (
             f"✨ 服用【{pill_name}】成功！\n"
@@ -323,7 +353,11 @@ class PillManager:
             del inventory[pill_name]
         player.set_pills_inventory(inventory)
 
-        await self.db.update_player(player)
+        await self.db.update_player_fields(
+            player.user_id,
+            active_pill_effects=player.active_pill_effects,
+            pills_inventory=player.pills_inventory,
+        )
 
         effect_desc = []
         if "cultivation_multiplier" in pill_data:
@@ -433,7 +467,23 @@ class PillManager:
             del inventory[pill_name]
         player.set_pills_inventory(inventory)
 
-        await self.db.update_player(player)
+        # 字段级写回：永久增益可能触达的属性列 + 增益表 + 丹药背包，单语句原子
+        await self.db.update_player_fields(
+            player.user_id,
+            permanent_pill_gains=player.permanent_pill_gains,
+            pills_inventory=player.pills_inventory,
+            lifespan=player.lifespan,
+            experience=player.experience,
+            physical_damage=player.physical_damage,
+            magic_damage=player.magic_damage,
+            physical_defense=player.physical_defense,
+            magic_defense=player.magic_defense,
+            mental_power=player.mental_power,
+            spiritual_qi=player.spiritual_qi,
+            max_spiritual_qi=player.max_spiritual_qi,
+            blood_qi=player.blood_qi,
+            max_blood_qi=player.max_blood_qi,
+        )
 
         msg_parts = [f"✨ 服用【{pill_name}】成功！", "━━━━━━━━━━━━━━━", "💪 永久增益："]
         for attr_name, value in gains_applied.items():
@@ -516,7 +566,25 @@ class PillManager:
             del inventory[pill_name]
         player.set_pills_inventory(inventory)
 
-        await self.db.update_player(player)
+        # 字段级写回：瞬间恢复丹触达的全部列，单语句原子
+        await self.db.update_player_fields(
+            player.user_id,
+            pills_inventory=player.pills_inventory,
+            blood_qi=player.blood_qi,
+            max_blood_qi=player.max_blood_qi,
+            spiritual_qi=player.spiritual_qi,
+            max_spiritual_qi=player.max_spiritual_qi,
+            gold=player.gold,
+            permanent_pill_gains=player.permanent_pill_gains,
+            lifespan=player.lifespan,
+            experience=player.experience,
+            physical_damage=player.physical_damage,
+            magic_damage=player.magic_damage,
+            physical_defense=player.physical_defense,
+            magic_defense=player.magic_defense,
+            mental_power=player.mental_power,
+            has_debuff_shield=player.has_debuff_shield,
+        )
         msg_parts.append("━━━━━━━━━━━━━━━")
         return True, "\n".join(msg_parts)
 
@@ -564,7 +632,21 @@ class PillManager:
         player.blood_qi = player.max_blood_qi // 2
 
         self._ensure_non_negative_attributes(player)
-        await self.db.update_player(player)
+        await self.db.update_player_fields(
+            player.user_id,
+            has_resurrection_pill=player.has_resurrection_pill,
+            lifespan=player.lifespan,
+            experience=player.experience,
+            physical_damage=player.physical_damage,
+            magic_damage=player.magic_damage,
+            physical_defense=player.physical_defense,
+            magic_defense=player.magic_defense,
+            mental_power=player.mental_power,
+            max_spiritual_qi=player.max_spiritual_qi,
+            spiritual_qi=player.spiritual_qi,
+            max_blood_qi=player.max_blood_qi,
+            blood_qi=player.blood_qi,
+        )
         return True
 
     def calculate_pill_attribute_effects(self, player: Player) -> dict:
@@ -655,7 +737,10 @@ class PillManager:
 
         if len(remaining_effects) != len(effects):
             player.set_active_pill_effects(remaining_effects)
-            await self.db.update_player(player)
+            await self.db.update_player_fields(
+                player.user_id,
+                active_pill_effects=player.active_pill_effects,
+            )
 
     async def add_pill_to_inventory(self, player: Player, pill_name: str, count: int = 1, external_transaction: bool = False):
         """添加丹药到背包（修复事务冲突版本）"""
@@ -665,9 +750,12 @@ class PillManager:
         else:
             inventory[pill_name] = count
         player.set_pills_inventory(inventory)
-        
+
         if not external_transaction:
-            await self.db.update_player(player)
+            await self.db.update_player_fields(
+                player.user_id,
+                pills_inventory=player.pills_inventory,
+            )
 
     def get_pill_inventory_display(self, player: Player) -> str:
         """获取丹药背包显示文本"""

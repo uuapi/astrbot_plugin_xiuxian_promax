@@ -5,6 +5,8 @@ from typing import Tuple
 from ..data import DataBase
 from ..models import Player
 
+__all__ = ["GambleManager"]
+
 class GambleManager:
     """赌石与黑市管理器"""
     def __init__(self, db: DataBase, config_manager, storage_ring_mgr):

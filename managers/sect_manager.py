@@ -11,6 +11,8 @@ from astrbot.api import logger
 from ..data.data_manager import DataBase
 from ..models_extended import Sect, UserStatus
 
+__all__ = ["SectManager", "SECT_NAME_MIN_LENGTH", "SECT_NAME_MAX_LENGTH", "SECT_NAME_FORBIDDEN"]
+
 SECT_NAME_MIN_LENGTH = 2
 SECT_NAME_MAX_LENGTH = 12
 SECT_NAME_FORBIDDEN = ["管理员", "系统", "官方", "GM", "admin"]

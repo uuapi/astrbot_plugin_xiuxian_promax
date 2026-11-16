@@ -167,7 +167,7 @@ class CombatHandlers:
         player.hp = hp
         player.mp = mp
         player.atk = final_atk
-        await self.db.update_player(player)
+        await self.db.update_player_fields(player.user_id, hp=player.hp, mp=player.mp, atk=player.atk)
 
         return CombatStats(
             user_id=user_id, name=player.user_name if player.user_name else f"道友{user_id}",

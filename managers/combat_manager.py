@@ -7,6 +7,8 @@ import random
 from typing import Tuple, Dict, List
 from dataclasses import dataclass
 
+__all__ = ["CombatStats", "CombatManager"]
+
 @dataclass
 class CombatStats:
     """战斗属性"""

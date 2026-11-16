@@ -1,3 +1,4 @@
+
 # managers/title_data.py
 """称号大全（100+，六品阶，含属性加成）—— v6.17
 获取路径 key 约定（由 title_manager 校验颁发）：
@@ -8,6 +9,8 @@
 加成 stats: atk/def 物理伤害、magic 法伤、phys_def/magic_def 防御、crit 会心率%、lifesteal 吸血%、exp 修为%、luck 气运
 同一时间只生效最高品阶的一个称号加成；称号本身全部永久收藏在图鉴中。
 """
+
+__all__ = ["TIERS", "TITLES"]
 
 
 def T(name, tier, how, condition=None, **stats):

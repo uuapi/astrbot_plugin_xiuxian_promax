@@ -11,6 +11,8 @@ from ..models_extended import Boss, UserStatus
 from ..models import Player
 from .combat_manager import CombatManager, CombatStats
 
+__all__ = ["BossManager"]
+
 if TYPE_CHECKING:
     from ..core import StorageRingManager
 

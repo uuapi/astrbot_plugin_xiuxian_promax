@@ -5,6 +5,8 @@ from typing import Tuple
 from ..data import DataBase
 from ..models import Player
 
+__all__ = ["ForgeManager"]
+
 class ForgeManager:
     """炼器与洗练管理器"""
     

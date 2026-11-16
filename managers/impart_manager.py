@@ -8,6 +8,8 @@ from typing import Tuple, Optional
 from ..data.data_manager import DataBase
 from ..models_extended import ImpartInfo
 
+__all__ = ["ImpartManager"]
+
 class ImpartManager:
     """传承系统管理器"""
     

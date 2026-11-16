@@ -362,7 +362,9 @@ class PlayerHandler:
 
         player.state = "修炼中"
         player.cultivation_start_time = int(time.time())
-        await self.db.update_player(player)
+        await self.db.update_player_fields(
+            player.user_id, state=player.state, cultivation_start_time=player.cultivation_start_time
+        )
         await self.db.ext.set_user_busy(player.user_id, UserStatus.CULTIVATING, 0)
 
         yield event.plain_result(f"🧘 道友已进入闭关状态\n💡 发送「{CMD_END_CULTIVATION}」结束闭关")
@@ -602,7 +604,11 @@ class PlayerHandler:
         player.experience += gained_exp
         player.state = "空闲"
         player.cultivation_start_time = 0
-        await self.db.update_player(player)
+        # 原子增修为 + 字段级写回状态，防并发覆盖其他收益
+        await self.db.add_player_exp(player.user_id, gained_exp)
+        await self.db.update_player_fields(
+            player.user_id, state=player.state, cultivation_start_time=0
+        )
         await self.db.ext.set_user_free(player.user_id)
 
         # 天骄榜：记录赛季修为增量（异常安全）
@@ -721,7 +727,11 @@ class PlayerHandler:
                 festival_msg += f"福泽恩赐：【{item_name}】x{item_count}\n"
         # =================================
 
-        await self.db.update_player(player)
+        # 原子发放签到奖励（签到日期已通过条件 UPDATE 原子占位，防双领）
+        checkin_gold_delta = check_in_gold + (festival["gold"] if festival else 0)
+        await self.db.add_player_gold(player.user_id, checkin_gold_delta)
+        if festival and festival.get("exp"):
+            await self.db.add_player_exp(player.user_id, festival["exp"])
         await self.db.ext.add_task_progress(player.user_id, "check_in", 1)
         # 称号：累计签到
         extra_msgs = ""

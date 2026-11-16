@@ -232,7 +232,9 @@ class MiscHandler:
         # 2. 强制重置玩家模型中的数据
         player.state = "空闲"
         player.cultivation_start_time = 0
-        await self.db.update_player(player)
+        await self.db.update_player_fields(
+            player.user_id, state=player.state, cultivation_start_time=0
+        )
         
         # 3. 不再删除 pending_gifts：待接收/待发送的赠予物品既不在储物戒也不在请求表里，
         #    删掉会让物品永久蒸发（发送方已扣物品）。过期时会自动返还发送者。

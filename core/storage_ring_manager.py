@@ -4,6 +4,8 @@ import json
 from typing import TYPE_CHECKING, Optional, Tuple, List
 from ..models import Player
 
+__all__ = ["StorageRingManager"]
+
 if TYPE_CHECKING:
     from ..data import DataBase
     from ..config_manager import ConfigManager
@@ -65,7 +67,7 @@ class StorageRingManager:
             data = {}
         data["storage_enchant"] = current_enchant + need * self.ENCHANT_BONUS_PER_STONE
         player.permanent_bonus = json.dumps(data, ensure_ascii=False)
-        await self.db.update_player(player)
+        await self.db.update_player_fields(player.user_id, permanent_bonus=player.permanent_bonus)
 
         return True, (
             f"✨ 空间附魔成功！\n"
@@ -151,7 +153,7 @@ class StorageRingManager:
             orig_player.set_storage_ring_items(items)  # 同步调用方对象
 
             if not external_transaction:
-                await self.db.update_player(player)
+                await self.db.update_player_fields(player.user_id, storage_ring_items=player.storage_ring_items)
                 await self.db.conn.commit()
 
             capacity = self.get_total_capacity(player)
@@ -196,7 +198,7 @@ class StorageRingManager:
 
             player.set_storage_ring_items(items)
             orig_player.set_storage_ring_items(items)  # 同步调用方对象
-            await self.db.update_player(player)
+            await self.db.update_player_fields(player.user_id, storage_ring_items=player.storage_ring_items)
             await self.db.conn.commit()
 
             capacity = self.get_ring_capacity(player.storage_ring)
@@ -234,7 +236,7 @@ class StorageRingManager:
 
             player.set_storage_ring_items(items)
             orig_player.set_storage_ring_items(items)  # 同步调用方对象
-            await self.db.update_player(player)
+            await self.db.update_player_fields(player.user_id, storage_ring_items=player.storage_ring_items)
             await self.db.conn.commit()
 
             capacity = self.get_ring_capacity(player.storage_ring)
@@ -302,13 +304,18 @@ class StorageRingManager:
         new_capacity = ring_config.get("capacity", 20)
         
         price = ring_config.get("price", 0)
-        if price > 0:
-            if player.gold < price:
-                return False, f"❌ 灵石不足！\n【{new_ring_name}】需要 {price:,} 灵石\n你当前拥有：{player.gold:,} 灵石"
-            player.gold -= price
+        # 条件原子扣款并写字段（单语句）：余额被并发扣减至不足时安全失败
+        spent = await self.db.spend_player_gold_for_fields(
+            player.user_id, price, storage_ring=new_ring_name
+        )
+        if not spent:
+            if price > 0:
+                return False, f"❌ 灵石不足！\n【{new_ring_name}】需要 {price:,} 灵石"
+            return False, "储物戒升级失败，请稍后再试。"
 
+        if price > 0:
+            player.gold -= price
         player.storage_ring = new_ring_name
-        await self.db.update_player(player)
 
         cost_msg = f"\n消耗灵石：{price:,}" if price > 0 else ""
         return True, (

@@ -10,6 +10,8 @@ from ..models import Player
 from ..data import DataBase
 from ..config_manager import ConfigManager
 
+__all__ = ["BreakthroughManager"]
+
 
 class BreakthroughManager:
     """突破管理器 - 处理境界突破相关逻辑"""
@@ -136,7 +138,10 @@ class BreakthroughManager:
                 if inventory[pill_name] <= 0:
                     del inventory[pill_name]
                 player.set_pills_inventory(inventory)
-                await self.db.update_player(player)
+                await self.db.update_player_fields(
+                    player.user_id,
+                    pills_inventory=player.pills_inventory,
+                )
             else:
                 return False, f"❌ 你的背包中没有【{pill_name}】，无法使用！", False
         # =========================================
@@ -249,7 +254,21 @@ class BreakthroughManager:
             player.magic_defense += magic_defense_gain
             player.mental_power += mental_power_gain
 
-            await self.db.update_player(player)
+            # 字段级写回：突破触达的全部属性列，单语句原子
+            await self.db.update_player_fields(
+                player.user_id,
+                level_index=player.level_index,
+                lifespan=player.lifespan,
+                physical_damage=player.physical_damage,
+                magic_damage=player.magic_damage,
+                physical_defense=player.physical_defense,
+                magic_defense=player.magic_defense,
+                mental_power=player.mental_power,
+                max_blood_qi=player.max_blood_qi,
+                blood_qi=player.blood_qi,
+                max_spiritual_qi=player.max_spiritual_qi,
+                spiritual_qi=player.spiritual_qi,
+            )
             
             loan_msg = await self._handle_breakthrough_loan_repay(player)
 
@@ -333,7 +352,10 @@ class BreakthroughManager:
                     pdata.pop("daoyun_guarantee", None)
                     pdata.pop("daoyun", None)
                     player.permanent_bonus = json.dumps(pdata, ensure_ascii=False)
-                    await self.db.update_player(player)
+                    await self.db.update_player_fields(
+                        player.user_id,
+                        permanent_bonus=player.permanent_bonus,
+                    )
             except Exception:
                 pass
 
@@ -346,7 +368,11 @@ class BreakthroughManager:
                 if not trib_result:
                     player.experience = max(0, player.experience - int(player.experience * 0.20))
                     player.hp = max(1, player.hp // 5)
-                    await self.db.update_player(player)
+                    await self.db.update_player_fields(
+                        player.user_id,
+                        experience=player.experience,
+                        hp=player.hp,
+                    )
                     await self._record_breakthrough(player, current_level_name, next_level_name, False, pill_name)
                     return False, trib_msg, False
                 success_msg += trib_msg
@@ -434,7 +460,10 @@ class BreakthroughManager:
                         pity_note = f"\n🌠 渡劫道韵：{daoyun}/100（满100后下次突破必定成功）"
 
                 player.permanent_bonus = json.dumps(pity_data, ensure_ascii=False)
-                await self.db.update_player(player)
+                await self.db.update_player_fields(
+                    player.user_id,
+                    permanent_bonus=player.permanent_bonus,
+                )
 
                 fail_msg = (
                     f"❌ 突破失败 ❌\n"
@@ -600,7 +629,7 @@ class BreakthroughManager:
             
             if player.gold >= total_due:
                 player.gold -= total_due
-                await self.db.update_player(player)
+                await self.db.deduct_player_gold_if(player.user_id, total_due)
                 await self.db.ext.close_loan(loan["id"])
                 
                 bank_data = await self.db.ext.get_bank_account(player.user_id)
@@ -623,7 +652,11 @@ class BreakthroughManager:
                 penalty_gold = player.gold
                 player.gold = 0
                 player.hp = max(1, player.hp // 2)
-                await self.db.update_player(player)
+                await self.db.update_player_fields(
+                    player.user_id,
+                    gold=0,
+                    hp=player.hp,
+                )
                 
                 # 将贷款标记为逾期
                 await self.db.ext.mark_loan_overdue(loan["id"])

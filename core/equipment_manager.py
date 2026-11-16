@@ -5,6 +5,8 @@ from typing import Optional, List, TYPE_CHECKING
 from ..models import Player, Item
 from ..data import DataBase
 
+__all__ = ["EquipmentManager"]
+
 if TYPE_CHECKING:
     from ..config_manager import ConfigManager
     from .storage_ring_manager import StorageRingManager
@@ -174,7 +176,8 @@ class EquipmentManager:
                 if not store_ok:
                     return False, f"储物戒空间不足，无法回收旧装备【{old_item}】，已取消换装。请先清理储物戒。\n{store_fail_msg}"
             player.weapon = item.name
-            await self.db.update_player(player)
+            # 旧装备已由 store_item 自带事务落库，此处只需写回槽位字段
+            await self.db.update_player_fields(player.user_id, weapon=player.weapon)
             if old_item:
                 return True, f"已将【{old_item}】替换为【{item.name}】（{item.rank}）\n旧装备【{old_item}】已存入储物戒"
             return True, f"已装备武器【{item.name}】（{item.rank}）"
@@ -186,7 +189,7 @@ class EquipmentManager:
                 if not store_ok:
                     return False, f"储物戒空间不足，无法回收旧装备【{old_item}】，已取消换装。请先清理储物戒。\n{store_fail_msg}"
             player.armor = item.name
-            await self.db.update_player(player)
+            await self.db.update_player_fields(player.user_id, armor=player.armor)
             if old_item:
                 return True, f"已将【{old_item}】替换为【{item.name}】（{item.rank}）\n旧装备【{old_item}】已存入储物戒"
             return True, f"已装备防具【{item.name}】（{item.rank}）"
@@ -198,7 +201,7 @@ class EquipmentManager:
                 if not store_ok:
                     return False, f"储物戒空间不足，无法回收旧心法【{old_item}】，已取消换装。请先清理储物戒。\n{store_fail_msg}"
             player.main_technique = item.name
-            await self.db.update_player(player)
+            await self.db.update_player_fields(player.user_id, main_technique=player.main_technique)
             if old_item:
                 return True, f"已将主修心法【{old_item}】替换为【{item.name}】（{item.rank}）\n旧心法【{old_item}】已存入储物戒"
             return True, f"已装备主修心法【{item.name}】（{item.rank}）"
@@ -211,7 +214,7 @@ class EquipmentManager:
                 return False, "功法栏已满（最多3个），请先卸下其他功法"
             techniques_list.append(item.name)
             player.set_techniques_list(techniques_list)
-            await self.db.update_player(player)
+            await self.db.update_player_fields(player.user_id, techniques=player.techniques)
             return True, f"已装备功法【{item.name}】（{item.rank}）（{len(techniques_list)}/3）"
         else:
             return False, f"未知的装备类型：{item.item_type}"
@@ -222,26 +225,26 @@ class EquipmentManager:
             if not player.weapon: return False, "未装备武器"
             item_name = player.weapon
             player.weapon = ""
-            await self.db.update_player(player)
+            await self.db.update_player_fields(player.user_id, weapon="")
             return True, f"已卸下武器【{item_name}】"
         elif slot_or_name in ["防具", "armor"]:
             if not player.armor: return False, "未装备防具"
             item_name = player.armor
             player.armor = ""
-            await self.db.update_player(player)
+            await self.db.update_player_fields(player.user_id, armor="")
             return True, f"已卸下防具【{item_name}】"
         elif slot_or_name in ["主修心法", "心法", "main_technique"]:
             if not player.main_technique: return False, "未装备主修心法"
             item_name = player.main_technique
             player.main_technique = ""
-            await self.db.update_player(player)
+            await self.db.update_player_fields(player.user_id, main_technique="")
             return True, f"已卸下主修心法【{item_name}】"
 
         techniques_list = player.get_techniques_list()
         if slot_or_name in techniques_list:
             techniques_list.remove(slot_or_name)
             player.set_techniques_list(techniques_list)
-            await self.db.update_player(player)
+            await self.db.update_player_fields(player.user_id, techniques=player.techniques)
             return True, f"已卸下功法【{slot_or_name}】"
         return False, f"未找到装备：{slot_or_name}"
 

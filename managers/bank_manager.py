@@ -106,8 +106,8 @@ class BankManager:
                 return False, f"存款上限为 {self.max_deposit:,} 灵石，当前余额 {current_balance:,}。"
             
             player.gold -= amount
-            await self.db.update_player(player, commit=False)
-            
+            await self.db.add_player_gold(player.user_id, -amount, commit=False)
+
             new_balance = current_balance + amount
             now = int(time.time())
             interest_time = now if current_balance == 0 else bank_data["last_interest_time"]
@@ -153,8 +153,8 @@ class BankManager:
             )
             
             player.gold += amount
-            await self.db.update_player(player, commit=False)
-            
+            await self.db.add_player_gold(player.user_id, amount, commit=False)
+
             await self.db.conn.execute(
                 "INSERT INTO bank_transactions (user_id, trans_type, amount, balance_after, description, created_at) VALUES (?, ?, ?, ?, ?, ?)",
                 (player.user_id, "withdraw", -amount, new_balance, "取出灵石", now)
@@ -273,8 +273,8 @@ class BankManager:
             )
             
             player.gold += amount
-            await self.db.update_player(player, commit=False)
-            
+            await self.db.add_player_gold(player.user_id, amount, commit=False)
+
             bank_data = await self.db.ext.get_bank_account(player.user_id)
             balance = bank_data["balance"] if bank_data else 0
             
@@ -324,9 +324,14 @@ class BankManager:
                     f"还差：{total_due - player.gold:,} 灵石"
                 )
             
+            # 条件原子扣款：余额被并发变动导致不足时安全失败
+            deduct_ok = await self.db.deduct_player_gold_if(player.user_id, total_due, commit=False)
+            if not deduct_ok:
+                await self.db.conn.rollback()
+                return False, f"灵石不足！偿还需要 {total_due:,} 灵石。"
+
             player.gold -= total_due
-            await self.db.update_player(player, commit=False)
-            
+
             # 直接底层 SQL 关闭贷款
             await self.db.conn.execute("UPDATE bank_loans SET status = 'closed' WHERE id = ?", (loan_info["id"],))
             

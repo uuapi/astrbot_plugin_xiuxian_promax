@@ -2,6 +2,8 @@
 from ..data import DataBase
 from ..models import Player
 
+__all__ = ["TutorialManager"]
+
 class TutorialManager:
     def __init__(self, db: DataBase):
         self.db = db
