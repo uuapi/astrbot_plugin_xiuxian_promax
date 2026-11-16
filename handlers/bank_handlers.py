@@ -57,8 +57,47 @@ class BankHandlers:
             "  /还款",
             "  /银行流水",
         ])
-        
-        yield event.plain_result("\n".join(msg_lines))
+
+        # ===== v3.52.5 图片卡片：优先发卡，失败/关闭降级文本 =====
+        card_path = None
+        try:
+            from ..utils.image_generator import render_card_async, card_enabled
+            if card_enabled("CARD_BANK"):
+                sections = [
+                    {"name": "存款", "rows": [
+                        ("存款余额", f"{info['balance']:,} 灵石"),
+                        ("待领利息", f"{info['pending_interest']:,} 灵石"),
+                        ("日利率", "0.1%（复利）"),
+                    ]},
+                    {"name": "持有", "rows": [
+                        ("持有灵石", f"{player.gold:,}"),
+                    ]},
+                ]
+                if info.get("loan"):
+                    loan_info = await self.bank_mgr.get_loan_info(player)
+                    if loan_info:
+                        loan_type_name = "突破贷款" if loan_info["loan_type"] == "breakthrough" else "普通贷款"
+                        status = "⚠️ 已逾期！" if loan_info["is_overdue"] else f"剩余 {loan_info['days_remaining']} 天"
+                        sections.append({"name": f"当前贷款（{loan_type_name}）", "rows": [
+                            ("本金", f"{loan_info['principal']:,} 灵石"),
+                            ("当前利息", f"{loan_info['current_interest']:,} 灵石"),
+                            ("应还总额", f"{loan_info['total_due']:,} 灵石"),
+                            ("状态", status),
+                        ]})
+                card_path = await render_card_async(
+                    "info", "灵石银行", f"{player.user_name or '道友'} 的钱庄账户",
+                    sections=sections,
+                    footer="/存灵石 · /取灵石 · /领取利息 · /贷款 · /还款 · /银行流水",
+                )
+        except Exception as e:
+            from astrbot.api import logger
+            logger.warning(f"银行卡片生成失败（已降级为文本）: {e}")
+            card_path = None
+
+        if card_path:
+            yield event.image_result(card_path)
+        else:
+            yield event.plain_result("\n".join(msg_lines))
     
     @player_required
     async def handle_deposit(self, player: Player, event: AstrMessageEvent, amount: int = 0):

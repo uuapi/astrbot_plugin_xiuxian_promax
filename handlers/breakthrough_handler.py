@@ -145,7 +145,68 @@ class BreakthroughHandler:
                 "=" * 28
             ])
 
-        yield event.plain_result("".join(info_lines))
+        # ===== v3.52.5 图片卡片：优先发卡，失败/关闭降级文本 =====
+        card_path = None
+        try:
+            from ..utils.image_generator import render_card_async, card_enabled
+            if card_enabled("CARD_BT_INFO"):
+                # 汇总加成明细行（与文本路径同源数据）
+                bonus_rows = [("基础成功率", f"{base_success_rate:.1%}")]
+                if temp_bonus:
+                    bonus_rows.append(("临时丹药加成", f"{temp_bonus:+.1%}"))
+                karma = getattr(player, "karma", 0) or 0
+                if karma != 0:
+                    karma_bonus = max(-0.10, min(0.10, karma * 0.01))
+                    bonus_rows.append(("功德庇佑" if karma > 0 else "业力缠身",
+                                       f"{karma_bonus:+.1%}"))
+                try:
+                    import json as _json
+                    _pb = _json.loads(player.permanent_bonus) if player.permanent_bonus else {}
+                    _streak = int(_pb.get("bt_fail_streak", 0))
+                    if _streak >= 1:
+                        bonus_rows.append(("道心磨砺", f"连败{_streak}次"))
+                    if player.level_index >= 30:
+                        _dy = int(_pb.get("daoyun", 0))
+                        if int(_pb.get("daoyun_guarantee", 0)):
+                            bonus_rows.append(("渡劫道韵", "已圆满·下次必成"))
+                        elif _dy > 0:
+                            bonus_rows.append(("渡劫道韵", f"{_dy}/100"))
+                except Exception:
+                    pass
+
+                pill_rows = [
+                    (f"{pill['name']}（{pill['rank']}）",
+                     f"使用后成功率 {pill['final_rate']:.1%}（最高 {pill['max_rate']:.1%}）")
+                    for pill in available_pills
+                ]
+                sections = [
+                    {"name": "突破之路", "rows": [
+                        ("当前境界", current_level_name),
+                        ("下一境界", next_level_name),
+                        # ✅/❌ 在 OpenMoji-black 字体中缺字，卡片内改用 CJK 文案
+                        ("修为", f"{int(player.experience):,} / {required_exp:,}（{'已满足' if exp_satisfied else '未满足'}）"),
+                        ("突破资费", f"{self.breakthrough_manager.get_breakthrough_cost(player):,} 灵石"),
+                    ]},
+                    {"name": "成功率加成", "rows": bonus_rows},
+                ]
+                if pill_rows:
+                    sections.append({"name": "可用破境丹", "rows": pill_rows})
+                card_path = await render_card_async(
+                    "combat",
+                    f"{display_name} · 突破信息",
+                    f"由 {current_level_name} 冲击 {next_level_name}",
+                    sections=sections,
+                    footer="/突破 [破境丹名称] · 失败损失10%修为且有死亡风险",
+                )
+        except Exception as e:
+            from astrbot.api import logger
+            logger.warning(f"突破信息卡片生成失败（已降级为文本）: {e}")
+            card_path = None
+
+        if card_path:
+            yield event.image_result(card_path)
+        else:
+            yield event.plain_result("".join(info_lines))
 
     @player_required
     async def handle_breakthrough(self, player: Player, event: AstrMessageEvent, pill_name: str = None):

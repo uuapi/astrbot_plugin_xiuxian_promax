@@ -472,10 +472,10 @@ class TestSect(unittest.IsolatedAsyncioTestCase):
             self.assertIsNotNone(p2.sect_id, "加入者必须入宗")
             self.assertEqual(p2.sect_id, p1.sect_id, "加入者应与宗主同宗")
 
-            # 我的宗门
+            # 我的宗门（卡片或文本必须含宗门名）
             ev3 = FakeEvent("c_2")
             await fire(env.sect.handle_my_sect, ev3)
-            self.assertIn("青云门", ev3.text)
+            self.assertTrue("[image]" in ev3.text or "青云门" in ev3.text)
 
             # 宗门列表
             ev4 = FakeEvent("c_1")
@@ -512,7 +512,31 @@ class TestRankings(unittest.IsolatedAsyncioTestCase):
             ]:
                 ev = FakeEvent("k_1")
                 await fire(handler, ev)
-                self.assertTrue(ev.text)
+                self.assertTrue(
+                    "[image]" in ev.text or "排行" in ev.text or "暂无" in ev.text,
+                    f"{handler.__name__} 必须出卡片或文本榜单/空态提示",
+                )
+
+    async def test_rank_rows_structured(self):
+        """get_rank_rows 六种榜单结构化数据与文本榜单同源一致"""
+        async with FlowEnv() as env:
+            await env.new_player("k_2", "行主")
+            await env.new_player("10086", "宗主乙")
+            await env.db.update_player_fields("10086", level_index=3, gold=200000)
+            ev = FakeEvent("10086", text="凌霄宗")
+            await fire(env.sect.handle_create_sect, ev, "凌霄宗")
+            # k_2 也存一笔款，让存款榜有数据
+            await env.db.add_player_gold("k_2", 50000)
+            await fire(env.bank.handle_deposit, FakeEvent("k_2"), 20000)
+
+            for kind in ("level", "power", "wealth", "sect", "deposit"):
+                rows = await env.rank.rank_mgr.get_rank_rows(kind)
+                self.assertIsNotNone(rows, f"{kind} 榜必须有行数据")
+                self.assertGreater(len(rows), 0)
+            # contribution 需要 sect_id
+            p = await env.get_player("10086")
+            rows = await env.rank.rank_mgr.get_rank_rows("contribution", sect_id=p.sect_id)
+            self.assertIsNotNone(rows, "贡献榜必须有行数据")
 
 
 class TestBank(unittest.IsolatedAsyncioTestCase):
@@ -538,7 +562,7 @@ class TestBank(unittest.IsolatedAsyncioTestCase):
             # 银行面板
             ev2 = FakeEvent("b_1")
             await fire(env.bank.handle_bank_info, ev2)
-            self.assertIn("银行", ev2.text)
+            self.assertTrue("[image]" in ev2.text or "银行" in ev2.text)
 
             # 取款
             ev3 = FakeEvent("b_1", text="500")
@@ -864,7 +888,7 @@ class TestBankInterest(unittest.IsolatedAsyncioTestCase):
             await fire(env.bank.handle_deposit, ev, 800)
             ev2 = FakeEvent("bi_1")
             await fire(env.bank.handle_bank_info, ev2)
-            self.assertIn("余额", ev2.text)
+            self.assertTrue("[image]" in ev2.text or "余额" in ev2.text)
 
 
 class TestBountyOps(unittest.IsolatedAsyncioTestCase):
@@ -959,6 +983,19 @@ class TestBreakthroughInfo(unittest.IsolatedAsyncioTestCase):
             ev2 = FakeEvent("bt_1")
             await fire(env.bt.handle_breakthrough_info, ev2)
             self.assertTrue(ev2.text)
+
+
+class TestBreakthroughCard(unittest.IsolatedAsyncioTestCase):
+
+    async def test_breakthrough_info_card(self):
+        async with FlowEnv() as env:
+            await env.new_player("btc_1")
+            ev = FakeEvent("btc_1")
+            await fire(env.bt.handle_breakthrough_info, ev)
+            self.assertTrue(
+                "[image]" in ev.text or "突破" in ev.text,
+                "突破信息必须出卡片或文本",
+            )
 
 
 class TestUnjam(unittest.IsolatedAsyncioTestCase):

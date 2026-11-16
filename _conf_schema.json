@@ -17,7 +17,12 @@
       "CARD_FARM": { "description": "灵田卡片", "type": "bool", "default": true, "hint": "/我的灵田 追加图片卡片。" },
       "CARD_SHOP": { "description": "商店货架卡片", "type": "bool", "default": true, "hint": "/丹阁 /器阁 /百宝阁 追加图片卡片。" },
       "CARD_MARKET": { "description": "坊市列表卡片", "type": "bool", "default": true, "hint": "/坊市 追加图片卡片。" },
-      "CARD_EQUIP": { "description": "我的装备卡片", "type": "bool", "default": true, "hint": "/我的装备 追加图片卡片。" }
+      "CARD_EQUIP": { "description": "我的装备卡片", "type": "bool", "default": true, "hint": "/我的装备 追加图片卡片。" },
+      "CARD_RANK": { "description": "排行榜卡片", "type": "bool", "default": true, "hint": "/境界排行 /战力排行 /灵石排行 /宗门排行 /存款排行 追加图片卡片（前三名奖牌）。" },
+      "CARD_RANK_SECT": { "description": "宗门贡献排行卡片", "type": "bool", "default": true, "hint": "/贡献排行 追加图片卡片。" },
+      "CARD_SECT": { "description": "我的宗门卡片", "type": "bool", "default": true, "hint": "/我的宗门 追加图片卡片。" },
+      "CARD_BANK": { "description": "银行卡片", "type": "bool", "default": true, "hint": "/银行 追加图片卡片（含贷款分区）。" },
+      "CARD_BT_INFO": { "description": "突破信息卡片", "type": "bool", "default": true, "hint": "/突破信息 追加图片卡片（成功率加成明细）。" }
     }
   },
   "ACCESS_CONTROL": {

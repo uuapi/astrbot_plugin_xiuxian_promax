@@ -50,8 +50,49 @@ class SectHandlers:
     async def handle_my_sect(self, event: AstrMessageEvent):
         """我的宗门"""
         user_id = event.get_sender_id()
-        success, msg, _ = await self.sect_mgr.get_sect_info(user_id)
-        yield event.plain_result(msg)
+        success, msg, info = await self.sect_mgr.get_sect_info(user_id)
+
+        # ===== v3.52.5 图片卡片：成功且开关开启时优先发卡，失败/关闭降级文本 =====
+        card_path = None
+        if success and info:
+            try:
+                from ..utils.image_generator import render_card_async, card_enabled
+                if card_enabled("CARD_SECT"):
+                    sect = info["sect"]
+                    owner = await self.db.get_player_by_id(sect.sect_owner)
+                    owner_name = (owner.user_name if owner and owner.user_name else str(sect.sect_owner))
+                    positions = self.sect_mgr.POSITIONS
+                    card_path = await render_card_async(
+                        "sect",
+                        f"【{sect.sect_name}】",
+                        f"宗门 ID: {sect.sect_id}",
+                        sections=[
+                            {"name": "宗门概况", "rows": [
+                                ("宗主", owner_name),
+                                ("成员数量", f"{info['member_count']}人"),
+                                ("建设度", f"{sect.sect_scale:,}"),
+                            ]},
+                            {"name": "宗门资源", "rows": [
+                                ("宗门灵石", f"{sect.sect_used_stone:,}"),
+                                ("宗门资材", f"{sect.sect_materials:,}"),
+                                ("丹房等级", f"Lv.{sect.elixir_room_level}"),
+                            ]},
+                            {"name": "我的身份", "rows": [
+                                ("职位", positions.get(info["player_position"], "未知")),
+                                ("我的贡献", f"{info['player_contribution']:,}"),
+                            ]},
+                        ],
+                        footer="模拟修仙 · /宗门捐献 提升建设度",
+                    )
+            except Exception as e:
+                from astrbot.api import logger
+                logger.warning(f"我的宗门卡片生成失败（已降级为文本）: {e}")
+                card_path = None
+
+        if card_path:
+            yield event.image_result(card_path)
+        else:
+            yield event.plain_result(msg)
     
     async def handle_sect_list(self, event: AstrMessageEvent):
         """宗门列表"""

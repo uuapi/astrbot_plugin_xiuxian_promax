@@ -345,3 +345,82 @@ class RankingManager:
             msg += f"{idx}. {_safe_name(p, p.user_id)} 师德 {p.virtue_points or 0}\n"
         msg += "━━━━━━━━━━━━━━━\n💡 师德可在 /师德兑换 换取稀有奖励"
         return True, msg
+
+    # ===== v3.52.5 图片卡片：结构化排行行数据 =====
+
+    RANK_KINDS = ("level", "power", "wealth", "sect", "deposit", "contribution")
+
+    async def get_rank_rows(self, kind: str, limit: int = 10, sect_id: int = None):
+        """返回指定排行的结构化行 (名次, 名称, 详情)，供图片卡片使用。
+
+        返回 None 表示无数据（调用方应降级为文本路径）。"""
+        kind = (kind or "").lower()
+        if kind == "level":
+            players = await self.db.get_all_players()
+            if not players:
+                return None
+            top = sorted(players, key=lambda p: p.experience, reverse=True)[:limit]
+            return [(i, _safe_name(p, p.user_id),
+                     f"境界：{p.get_level(self.config_manager)} | 修为：{int(p.experience):,}")
+                    for i, p in enumerate(top, 1)]
+        if kind == "power":
+            players = await self.db.get_all_players()
+            if not players:
+                return None
+            rows = []
+            for p in players:
+                combat = self.combat_mgr.calculate_atk(
+                    p.experience, p.atkpractice, 0.0, p.physical_damage, p.magic_damage, p.cultivation_type
+                )
+                rows.append((combat, p))
+            top = sorted(rows, key=lambda x: x[0], reverse=True)[:limit]
+            return [(i, _safe_name(p, p.user_id), f"战力：{int(c):,}")
+                    for i, (c, p) in enumerate(top, 1)]
+        if kind == "wealth":
+            players = await self.db.get_all_players()
+            if not players:
+                return None
+            top = sorted(players, key=lambda p: p.gold, reverse=True)[:limit]
+            return [(i, _safe_name(p, p.user_id), f"灵石：{p.gold:,}")
+                    for i, p in enumerate(top, 1)]
+        if kind == "sect":
+            sects = await self.db.ext.get_all_sects()
+            if not sects:
+                return None
+            top = sorted(sects, key=lambda s: s.sect_scale, reverse=True)[:limit]
+            rows = []
+            for i, s in enumerate(top, 1):
+                owner = await self.db.get_player_by_id(s.sect_owner)
+                owner_name = _safe_name(owner, s.sect_owner)
+                members = await self.db.ext.get_sect_members(s.sect_id)
+                name = (s.sect_name or "").replace("@", "＠")
+                if len(name) > MAX_NAME_LENGTH:
+                    name = name[:MAX_NAME_LENGTH] + "…"
+                rows.append((i, f"【{name}】",
+                             f"宗主：{owner_name} | 建设度：{s.sect_scale:,} | 成员：{len(members)}人"))
+            return rows
+        if kind == "deposit":
+            rankings = await self.db.ext.get_deposit_ranking(limit)
+            if not rankings:
+                return None
+            rows = []
+            for i, item in enumerate(rankings, 1):
+                uid = item["user_id"]
+                player = await self.db.get_player_by_id(uid)
+                rows.append((i, _safe_name(player, uid), f"存款：{item['balance']:,} 灵石"))
+            return rows
+        if kind == "contribution":
+            if not sect_id:
+                return None
+            sect = await self.db.ext.get_sect_by_id(sect_id)
+            if not sect:
+                return None
+            members = await self.db.ext.get_sect_members(sect_id)
+            if not members:
+                return None
+            top = sorted(members, key=lambda p: p.sect_contribution, reverse=True)[:limit]
+            return [(i,
+                     f"{_safe_name(m, m.user_id)}（{POSITION_MAP.get(m.sect_position, '成员')}）",
+                     f"贡献度：{m.sect_contribution:,}")
+                    for i, m in enumerate(top, 1)]
+        return None
