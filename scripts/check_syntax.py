@@ -1,4 +1,5 @@
-import ast, glob, sys
+import ast
+glob, sys = __import__('glob'), __import__('sys')
 bad = []
 for f in glob.glob('**/*.py', recursive=True):
     base = f.replace('\\', '/').split('/')[-1]

@@ -331,6 +331,10 @@ class XiuXianPlugin(Star):
         from .managers.title_auction_manager import TitleAuctionManager
         self.title_auction_mgr = TitleAuctionManager(self.db)
 
+        # v3.51.0 宗门贡献商店
+        from .managers.sect_shop_manager import SectShopManager
+        self.sect_shop_mgr = SectShopManager(self.db, self.storage_ring_mgr)
+
         # v3.45.0 秘境藏宝图
         from .managers.treasure_map_manager import TreasureMapManager
         self.tmap_mgr = TreasureMapManager(self.db, self.storage_ring_mgr)
