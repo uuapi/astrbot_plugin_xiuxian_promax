@@ -300,12 +300,14 @@ class TestClaimGates(ConcurrencyTestBase):
         today = "2026-11-17"
 
         async with self.db.conn.execute(
-            "UPDATE players SET last_check_in_date = ? WHERE user_id = ? AND (last_check_in_date IS NULL OR last_check_in_date != ?)",
+            "UPDATE players SET last_check_in_date = ?"
+            " WHERE user_id = ? AND (last_check_in_date IS NULL OR last_check_in_date != ?)",
             (today, p.user_id, today)
         ) as cur:
             first = cur.rowcount > 0
         async with self.db.conn.execute(
-            "UPDATE players SET last_check_in_date = ? WHERE user_id = ? AND (last_check_in_date IS NULL OR last_check_in_date != ?)",
+            "UPDATE players SET last_check_in_date = ?"
+            " WHERE user_id = ? AND (last_check_in_date IS NULL OR last_check_in_date != ?)",
             (today, p.user_id, today)
         ) as cur:
             second = cur.rowcount > 0

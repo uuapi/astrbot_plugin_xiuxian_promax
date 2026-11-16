@@ -8,16 +8,16 @@
 
 <br>
 
-<a href="https://github.com/uuapi/astrbot_plugin_xiuxian_promax/releases"><img src="https://img.shields.io/badge/Version-v3.52.3-D4AF37?style=flat-square&labelColor=1a1a2e" alt="Version"/></a>
+<a href="https://github.com/uuapi/astrbot_plugin_xiuxian_promax/releases"><img src="https://img.shields.io/badge/Version-v3.52.4-D4AF37?style=flat-square&labelColor=1a1a2e" alt="Version"/></a>
 <a href="https://www.python.org/"><img src="https://img.shields.io/badge/Python-3.10+-3776AB?style=flat-square&logo=python&logoColor=white" alt="Python"/></a>
 <a href="https://github.com/AstrBotDevs/AstrBot"><img src="https://img.shields.io/badge/AstrBot-3.4+-FF6B35?style=flat-square" alt="AstrBot"/></a>
-<a href="https://github.com/uuapi/astrbot_plugin_xiuxian_promax/actions"><img src="https://img.shields.io/badge/Tests-121%20Passing-2EA043?style=flat-square&logo=githubactions&logoColor=white" alt="Tests"/></a>
+<a href="https://github.com/uuapi/astrbot_plugin_xiuxian_promax/actions"><img src="https://img.shields.io/badge/Tests-175%20Passing-2EA043?style=flat-square&logo=githubactions&logoColor=white" alt="Tests"/></a>
 <a href="LICENSE"><img src="https://img.shields.io/badge/License-AGPL--3.0-1F6FEB?style=flat-square" alt="License"/></a>
 <a href="https://github.com/uuapi/astrbot_plugin_xiuxian_promax/stargazers"><img src="https://img.shields.io/github/stars/uuapi/astrbot_plugin_xiuxian_promax?style=flat-square&color=gold" alt="Stars"/></a>
 
 <br>
 
-**267 指令** · **43 管理器** · **25+ 玩法系统** · **121 项自动化测试** · **零已知缺陷**
+**267 指令** · **43 管理器** · **25+ 玩法系统** · **175 项自动化测试** · **零已知缺陷**
 
 [功能特色](#-功能特色) · [快速上手](#-快速上手) · [指令大全](#-指令大全) · [架构设计](#-架构设计) · [测试](#-测试) · [版本历程](#-版本历程) · [配置](#%EF%B8%8F-配置) · [贡献](#-贡献)
 
@@ -361,7 +361,7 @@ astrbot_plugin_xiuxian_promax/
 │
 ├── config/                        # 游戏数值配置（17 个 JSON）
 ├── resources/                     # 图片资源（字体+背景）
-├── tests/                         # 测试套件（121 项，含并发回归）
+├── tests/                         # 测试套件（175 项，含 268 指令 E2E）
 └── scripts/                       # 开发脚本
 ```
 
@@ -402,7 +402,7 @@ astrbot_plugin_xiuxian_promax/
 | 编译（145 个 .py） | ✅ 0 错误 |
 | AST 语法检查 | ✅ ALL SYNTAX OK |
 | 静态 12 类规则 | ✅ 0 残留 |
-| 单元 + 集成 + 并发回归测试 | ✅ **121/121 OK** |
+| 单元 + 集成 + 并发回归 + 268 指令 E2E | ✅ **175/175 OK** |
 | 指令覆盖 | ✅ 268 条 · 缺失 0 |
 | 导入烟测（30 模块） | ✅ 30/30 |
 
@@ -528,7 +528,8 @@ ruff check . --select F821,F823,F401,F841,B007,E722,E711,E712,E731,E741,F541,E40
 | **v3.51.0** | 宗门+突破 | 🏪 贡献商店 + ⚡ 天劫系统 |
 | **v3.52.0** | 修炼深化 | 🧬 灵根品阶系统 |
 | **v3.52.1** | 🔧 | 冲突修复 + 周报全接入 + 道韵天劫联动 |
-| **v3.52.3** | 🔧 并发加固 | 最后 48 处整行写回全部转为原子字段更新（S1 风险清零）+ 新增条件扣款原子方法 + 14 个并发回归测试（总 121）+ 26 模块补齐 `__all__` |
+| **v3.52.3** | 🔧 并发加固 | 最后 48 处整行写回全部转为原子字段更新（S1 风险清零）+ 新增条件扣款原子方法 + 14 个并发回归测试 + 26 模块补齐 `__all__` |
+| **v3.52.4** | 🧪 全量指令测试 | 268 条指令五层验证（注册/帮助/接线/行为/并发）：帮助覆盖 100%、接线零悬空、E2E 流程测试 54 用例新增，总计 175 项测试 |
 
 </details>
 
@@ -545,7 +546,7 @@ cd astrbot_plugin_xiuxian_promax
 pip install ruff pyflakes
 
 # 提交前必须通过
-python -m unittest discover -s tests         # 121 项测试
+python -m unittest discover -s tests         # 175 项测试
 python scripts/check_syntax.py               # 语法检查
 ruff check . --select F821,F823,F401,F841,B007,E722  # Lint
 python scripts/_final_check.py               # 指令覆盖审计
