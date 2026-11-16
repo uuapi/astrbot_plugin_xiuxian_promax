@@ -69,6 +69,8 @@ from .pill_synth_manager import PillSynthManager
 from .redpacket_manager import RedPacketManager
 # v3.50.0 天道封号台
 from .title_auction_manager import TitleAuctionManager
+# v3.52.0 灵根品阶
+from .root_grade_manager import RootGradeManager
 # v3.45.0 秘境藏宝图
 from .treasure_map_manager import TreasureMapManager
 
@@ -82,5 +84,5 @@ __all__ = [
     "AuctionManager", "EscortManager", "EncounterManager", "LifeSkillManager", "CalamityManager",
     "TowerManager", "MeritManager", "HuntManager", "WanderMerchantManager", "LadderManager",
     "SpiritTideManager", "SectRaidManager", "MemoirManager", "NestDefenseManager", "DaoBetManager",
-    "MentorManager", "PillSynthManager", "RedPacketManager", "TreasureMapManager", "TitleAuctionManager"
+    "MentorManager", "PillSynthManager", "RedPacketManager", "TreasureMapManager", "TitleAuctionManager", "RootGradeManager"
 ]

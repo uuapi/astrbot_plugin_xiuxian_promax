@@ -331,6 +331,10 @@ class XiuXianPlugin(Star):
         from .managers.title_auction_manager import TitleAuctionManager
         self.title_auction_mgr = TitleAuctionManager(self.db)
 
+        # v3.52.0 灵根品阶
+        from .managers.root_grade_manager import RootGradeManager
+        self.root_grade_mgr = RootGradeManager(self.db)
+
         # v3.51.0 宗门贡献商店
         from .managers.sect_shop_manager import SectShopManager
         self.sect_shop_mgr = SectShopManager(self.db, self.storage_ring_mgr)
@@ -3084,6 +3088,20 @@ class XiuXianPlugin(Star):
         except ValueError:
             idx_int = 0
         _ok, msg = await self.title_auction_mgr.bid(player, idx_int)
+        yield event.plain_result(msg)
+
+    # ===== v3.52.0 灵根品阶 =====
+    @filter.command("洗髓灵根", "查看/提升灵根品阶（影响修炼速度倍率）")
+    @require_whitelist
+    async def handle_root_grade(self, event: AstrMessageEvent, action: str = ""):
+        player = await self.db.get_player_by_id(event.get_sender_id())
+        if not player:
+            yield event.plain_result("❌ 道友尚未踏入仙途。")
+            return
+        if action.strip() in ("升级", "洗髓", "提升"):
+            _ok, msg = await self.root_grade_mgr.upgrade(player)
+        else:
+            msg = await self.root_grade_mgr.get_panel(player)
         yield event.plain_result(msg)
 
     @filter.command("仙缘突破卷", "仙缘点兑突破成功率卷（150点/张,+8%）")

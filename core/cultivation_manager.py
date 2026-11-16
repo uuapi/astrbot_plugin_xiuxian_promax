@@ -172,8 +172,16 @@ class CultivationManager:
             pass
         # ======================================
 
-        # 计算总修为倍率：灵根倍率 * (1 + 心法倍率) * 丹药倍率 * 仙缘倍率
-        total_multiplier = root_speed * (1.0 + technique_bonus) * cultivation_pill_bonus * global_mult
+        # v3.52.0 灵根品阶倍率（凡品×1.0 → 天品×1.5，存 permanent_bonus["root_grade"]）
+        root_grade_mult = 1.0
+        try:
+            _grade = min(4, max(0, int(bonus_data.get("root_grade", 0))))
+            root_grade_mult = [1.0, 1.1, 1.2, 1.35, 1.5][_grade]
+        except Exception:
+            pass
+
+        # 计算总修为倍率：灵根倍率 * (1 + 心法倍率) * 丹药倍率 * 仙缘倍率 * 品阶倍率
+        total_multiplier = root_speed * (1.0 + technique_bonus) * cultivation_pill_bonus * global_mult * root_grade_mult
         total_exp = int(base_exp * minutes * total_multiplier)
 
         logger.info(

@@ -1,4 +1,6 @@
-import os, sys, zipfile
+import os
+import sys
+import zipfile
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 version = sys.argv[1] if len(sys.argv) > 1 else "v3.51.0"
