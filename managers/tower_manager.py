@@ -186,6 +186,11 @@ class TowerManager:
             lines.append(f"🧭 当前最高通关：第 {target} 层")
             if new_record:
                 lines.append("🏆 你刷新了全服最高纪录！镇妖塔为你震荡三日夜！")
+            # v3.49.0 周报记录
+            try:
+                await self.db.ext.syscfg_adjust_number(f"weekly_tower_{uid}_{__import__('time').strftime('%G-W%V')}", 1)
+            except Exception:
+                pass
             return True, "\n".join(lines), new_record
 
         # 挑战失败：保底安慰奖 + 气血受创

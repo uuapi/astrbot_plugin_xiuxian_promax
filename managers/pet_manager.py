@@ -240,6 +240,11 @@ class PetManager:
         exp = int(_random.randint(*dest_cfg["exp"]) * lv_mult)
         await self.db.add_player_gold(player.user_id, gold)
         await self.db.add_player_exp(player.user_id, exp)
+        # v3.49.0 周报记录
+        try:
+            await self.db.ext.syscfg_adjust_number(f"weekly_expedition_{player.user_id}_{time.strftime('%G-W%V')}", 1)
+        except Exception:
+            pass
 
         # 灵兽经验 +100（与喂养一致，就地升级）
         pet = await self.get_pet(player.user_id)

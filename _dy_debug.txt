@@ -1,0 +1,15 @@
+ * wm)
+                cost_note += f"\n🌦️ 天象{'助道' if wm > 1 else '晦暗'}：成功率{wm:.0%}倍"
+        except Exception:
+            pass
+
+        # 渡劫必成符（道韵满100积累）：直接成功
+        guarantee = int(pity_data.get("daoyun_guarantee", 0))
+        if guarantee:
+            breakthrough_success = True
+            cost_note += "\n🌠【道韵爆发】此前凝聚的道韵轰然引爆——这一步，天命所归！"
+        else:
+            random_value = random.random()
+            breakthrough_success = random_value < success_rate
+
+        # v3.23.0 渡劫观礼（密封信封模型）：先掷点再

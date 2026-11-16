@@ -245,6 +245,16 @@ class CombatHandlers:
 
         # v3.30.0 段位天梯：决斗积分（发起方结算）
         final_log += await self._record_ladder(user_id, result['winner'], duel=True)
+        # v3.49.0 周报记录
+        try:
+            import time as _t
+            wk = _t.strftime('%G-W%V')
+            if result['winner'] == user_id:
+                await self.db.ext.syscfg_adjust_number(f"weekly_duel_win_{user_id}_{wk}", 1)
+            elif result['winner']:
+                await self.db.ext.syscfg_adjust_number(f"weekly_duel_lose_{user_id}_{wk}", 1)
+        except Exception:
+            pass
 
         yield event.plain_result(final_log)
 
@@ -299,5 +309,11 @@ class CombatHandlers:
 
         # v3.30.0 段位天梯：切磋积分（发起方结算）
         final_log += await self._record_ladder(user_id, result['winner'], duel=False)
+        # v3.49.0 周报记录
+        try:
+            import time as _t
+            await self.db.ext.syscfg_adjust_number(f"weekly_spar_{user_id}_{_t.strftime('%G-W%V')}", 1)
+        except Exception:
+            pass
 
         yield event.plain_result(final_log)

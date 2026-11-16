@@ -299,6 +299,11 @@ class QuizManager:
                 for k, v in session["results"].items() if v
             )
             await self._save_session(uid, None)
+            # v3.49.0 周报记录
+            try:
+                await self.db.ext.syscfg_adjust_number(f"weekly_quiz_{uid}_{time.strftime('%G-W%V')}", 1)
+            except Exception:
+                pass
             name = player.user_name or uid[:8]
             if right == len(questions):
                 rank = "🏆 状元之才！"

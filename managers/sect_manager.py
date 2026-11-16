@@ -230,6 +230,8 @@ class SectManager:
             week = _time.strftime('%G-W%V')
             await self.db.ext.syscfg_adjust_number(f"sect_donate_week_{player.sect_id}_{week}", stone_amount)
             await self.db.ext.syscfg_adjust_number(f"sect_donate_user_{user_id}_{week}", stone_amount)
+            # v3.49.0 周报记录
+            await self.db.ext.syscfg_adjust_number(f"weekly_donate_{user_id}_{week}", stone_amount)
         except Exception:
             pass
 

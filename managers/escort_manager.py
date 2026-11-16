@@ -120,6 +120,12 @@ class EscortManager:
             return False, "❌ 你当前没有在押镖！"
         await self.db.add_player_gold(user_id, escort_gold)
         await self.db.add_player_exp(user_id, escort_exp)
+        # v3.49.0 周报记录
+        try:
+            import time as _t
+            await self.db.ext.syscfg_adjust_number(f"weekly_escort_{user_id}_{_t.strftime('%G-W%V')}", 1)
+        except Exception:
+            pass
         await self.db.conn.execute(
             "UPDATE players SET karma = karma + 1 WHERE user_id = ?",  # 护镖有功，功德+1
             (user_id,)

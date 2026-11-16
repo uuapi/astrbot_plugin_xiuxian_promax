@@ -326,6 +326,12 @@ class MarriageManager:
             return False, f"❌ 道侣储物戒已满，礼物已退回（{msg2}）"
 
         await self.add_bond(me, partner_id, self.GIFT_BOND)
+        # v3.49.0 周报记录
+        try:
+            import time as _t
+            await self.db.ext.syscfg_adjust_number(f"weekly_gift_{me}_{_t.strftime('%G-W%V')}", 1)
+        except Exception:
+            pass
         marriage = await self._load_marriage(me)
         bond_now = marriage.get("bond", 0) if marriage else 0
         pname = partner.user_name or partner_id[:8]

@@ -195,8 +195,10 @@ class BreakthroughManager:
 
         # 渡劫必成符（道韵满100积累）：直接成功
         guarantee = int(pity_data.get("daoyun_guarantee", 0))
+        daoyun_auto_pass = False  # v3.51.0：道韵护体→天劫自动通过
         if guarantee:
             breakthrough_success = True
+            daoyun_auto_pass = True
             cost_note += "\n🌠【道韵爆发】此前凝聚的道韵轰然引爆——这一步，天命所归！"
         else:
             random_value = random.random()
@@ -340,7 +342,7 @@ class BreakthroughManager:
             # v3.51.0 天劫系统：重大境界突破触发天劫
             major_realm_boundaries = [12, 18, 24, 30, 36, 42, 48]
             if next_level_index in major_realm_boundaries:
-                trib_result, trib_msg = await self._tribulation(player, next_level_index)
+                trib_result, trib_msg = await self._tribulation(player, next_level_index, auto_pass=daoyun_auto_pass)
                 if not trib_result:
                     player.experience = max(0, player.experience - int(player.experience * 0.20))
                     player.hp = max(1, player.hp // 5)
@@ -351,6 +353,11 @@ class BreakthroughManager:
 
             # v3.47.0 突破心得录：记录成功
             await self._record_breakthrough(player, current_level_name, next_level_name, True, pill_name)
+            # v3.49.0 周报记录
+            try:
+                await self.db.ext.syscfg_adjust_number(f"weekly_breakthrough_{player.user_id}_{__import__('time').strftime('%G-W%V')}", 1)
+            except Exception:
+                pass
             return True, success_msg, False
 
         else:
@@ -518,7 +525,7 @@ class BreakthroughManager:
         lines.append("💡 突破心得录自动记录最近 50 次突破尝试")
         return "\n".join(lines)
 
-    async def _tribulation(self, player, next_level_index: int):
+    async def _tribulation(self, player, next_level_index: int, auto_pass: bool = False):
         """v3.51.0 天劫系统：重大境界突破触发天劫，3 道天雷依次判定"""
         import random as _rnd
         waves = min(3, max(1, (next_level_index - 12) // 6 + 1))
@@ -535,6 +542,20 @@ class BreakthroughManager:
         talisman_bonus = 0.15 * talisman_used
         lines = ["⚡⚡⚡【天劫降临】⚡⚡⚡", "━━━━━━━━━━━━━━━",
                  "天空骤然阴沉，紫色雷云凝聚——重大境界突破引来天道试炼！"]
+        if auto_pass:
+            # v3.51.0 道韵护体：天韵爆发时天劫自动通过（防止道韵保底被天劫浪费）
+            lines.append("🌠 道韵爆发形成的护体金光令天劫自行溃散——天道认可了你的积累！")
+            lines.append("━━━━━━━━━━━━━━━")
+            atk = max(1, int((player.physical_damage or 0) * 0.05))
+            dfn = max(1, int((player.physical_defense or 0) * 0.05))
+            mag = max(1, int((player.magic_damage or 0) * 0.05))
+            hpx = max(1, int((player.max_blood_qi or 0) * 0.05))
+            await self.db.conn.execute(
+                "UPDATE players SET physical_damage=physical_damage+?,physical_defense=physical_defense+?,magic_damage=magic_damage+?,max_blood_qi=max_blood_qi+? WHERE user_id=?",
+                (atk, dfn, mag, hpx, player.user_id))
+            await self.db.conn.commit()
+            lines.append(f"📈 淬体奖励：物伤+{atk} 物防+{dfn} 法伤+{mag} 气血+{hpx}")
+            return True, "\n".join(lines)
         if talisman_used:
             lines.append(f"🛡️ 你祭出 {talisman_used} 张【护体符】，灵光护罩笼罩全身！")
         all_ok = True
