@@ -2565,8 +2565,6 @@ class XiuXianPlugin(Star):
             idx = int(item_id)
         except ValueError:
             idx = 0
-        # 记录本次兑换成本（供存储失败退还）
-        from .managers.social_manager import SPIRIT_COMPANIONS  # noqa
         goods_cost_ref = 0
         try:
             _shop = {1: 80, 2: 150, 3: 300}
