@@ -17,7 +17,7 @@ class MiscHandler:
     async def handle_help(self, event: AstrMessageEvent, keyword: str = ""):
         """显示修仙指令大全（v3.24.0：支持 /修仙帮助 <关键字> 过滤相关指令行）"""
         help_text = (
-            "📖 修仙指令大全 v3.52.7 (并发加固版)\n"
+            "📖 修仙指令大全 v3.52.8 (并发加固版)\n"
             "💡 提示：所有指令均可带 / 前缀使用\n"
             "━━━━━━━━━━━━━━━\n"
             "【🌟 入门与基础】\n"

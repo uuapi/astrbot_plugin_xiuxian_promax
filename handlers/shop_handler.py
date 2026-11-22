@@ -322,6 +322,23 @@ class ShopHandler:
         await self.db.begin_immediate()
         try:
             player = await self.db.get_player_by_id(event.get_sender_id())
+            # v3.52.8 修复(旧价成交)：事务内复核货架现价与库存——
+            # target_item/price 来自事务外快照，购买执行期间货架刷新（整点换货/售罄补货）
+            # 会按旧价成交。以货架当前数据为准，物品已不在架上则拒绝。
+            _, shelf_items = await self.db.get_shop_data(pavilion_id)
+            shelf_item = next(
+                (it for it in (shelf_items or []) if it.get('name') == item_name), None)
+            if not shelf_item:
+                await self.db.conn.rollback()
+                yield event.plain_result(f"【{item_name}】已从货架下架（刚刷新），请重新查询。")
+                return
+            current_stock = shelf_item.get('stock', 0)
+            if current_stock < quantity:
+                await self.db.conn.rollback()
+                yield event.plain_result(f"【{item_name}】库存不足，当前库存: {current_stock}。")
+                return
+            price = shelf_item['price']
+            total_price = price * quantity
             if player.gold < total_price:
                 await self.db.conn.rollback()
                 yield event.plain_result(
@@ -440,90 +457,5 @@ class ShopHandler:
         ]
         yield event.plain_result("\n".join(lines))
 
-    async def _apply_legacy_pill_effects(self, player: Player, item: dict, quantity: int) -> tuple:
-        """应用旧系统丹药效果（items.json中的丹药）"""
-        effects = item.get('data', {}).get('effect', {})
-        if not effects:
-            return False, f"丹药【{item['name']}】无效果配置。"
-
-        effect_msgs = []
-        pill_name = item['name']
-        gold_change = 0
-
-        for _ in range(quantity):
-            if 'add_hp' in effects:
-                hp_change = effects['add_hp']
-                if player.cultivation_type == "体修":
-                    old_blood = player.blood_qi
-                    player.blood_qi = max(0, min(player.max_blood_qi, player.blood_qi + hp_change))
-                    effect_msgs.append(f"气血+{player.blood_qi - old_blood}" if hp_change > 0 else f"气血{hp_change}")
-                else:
-                    old_qi = player.spiritual_qi
-                    player.spiritual_qi = max(0, min(player.max_spiritual_qi, player.spiritual_qi + hp_change))
-                    effect_msgs.append(f"灵气+{player.spiritual_qi - old_qi}" if hp_change > 0 else f"灵气{hp_change}")
-            if 'add_experience' in effects:
-                exp_gain = effects['add_experience']
-                player.experience += exp_gain
-                effect_msgs.append(f"修为+{exp_gain}")
-            if 'add_max_hp' in effects:
-                max_hp_gain = effects['add_max_hp']
-                if player.cultivation_type == "体修":
-                    player.max_blood_qi += max_hp_gain
-                    effect_msgs.append(f"最大气血+{max_hp_gain}")
-                else:
-                    player.max_spiritual_qi += max_hp_gain
-                    effect_msgs.append(f"最大灵气+{max_hp_gain}")
-            if 'add_spiritual_power' in effects:
-                sp_gain = effects['add_spiritual_power']
-                player.magic_damage += sp_gain
-                effect_msgs.append(f"法伤+{sp_gain}")
-            if 'add_mental_power' in effects:
-                mp_gain = effects['add_mental_power']
-                player.mental_power += mp_gain
-                effect_msgs.append(f"精神力+{mp_gain}")
-            if 'add_attack' in effects:
-                atk_gain = effects['add_attack']
-                player.physical_damage += atk_gain
-                effect_msgs.append(f"物伤+{atk_gain}" if atk_gain > 0 else f"物伤{atk_gain}")
-            if 'add_defense' in effects:
-                def_gain = effects['add_defense']
-                player.physical_defense += def_gain
-                effect_msgs.append(f"物防+{def_gain}" if def_gain > 0 else f"物防{def_gain}")
-            if 'add_gold' in effects:
-                gold_change = effects['add_gold']
-                player.gold += gold_change
-                effect_msgs.append(f"灵石+{gold_change}" if gold_change > 0 else f"灵石{gold_change}")
-
-        player.physical_damage = max(0, player.physical_damage)
-        player.magic_damage = max(0, player.magic_damage)
-        player.physical_defense = max(0, player.physical_defense)
-        player.magic_defense = max(0, player.magic_defense)
-        player.mental_power = max(0, player.mental_power)
-        player.spiritual_qi = min(player.spiritual_qi, player.max_spiritual_qi)
-        player.blood_qi = min(player.blood_qi, player.max_blood_qi)
-
-        # 字段级写回属性列（事务内，统一提交）；灵石走原子增减
-        await self.db.update_player_fields(
-            player.user_id,
-            experience=player.experience,
-            physical_damage=player.physical_damage,
-            magic_damage=player.magic_damage,
-            physical_defense=player.physical_defense,
-            magic_defense=player.magic_defense,
-            mental_power=player.mental_power,
-            spiritual_qi=player.spiritual_qi,
-            max_spiritual_qi=player.max_spiritual_qi,
-            blood_qi=player.blood_qi,
-            max_blood_qi=player.max_blood_qi,
-            commit=False
-        )
-        if gold_change:
-            await self.db.add_player_gold(player.user_id, gold_change * quantity, commit=False)
-
-        unique_effects = list(dict.fromkeys(effect_msgs))
-        effects_str = "、".join(unique_effects[:5])
-        if len(unique_effects) > 5:
-            effects_str += "..."
-
-        qty_str = f"x{quantity}" if quantity > 1 else ""
-        return True, f"服用【{pill_name}】{qty_str}成功！效果：{effects_str}"
+    # v3.52.8 清理：删除死代码 _apply_legacy_pill_effects（v6.18 起购买丹药一律
+    # 入丹药背包由 /服用丹药 生效，此函数已无任何调用方）

@@ -180,7 +180,7 @@ class StorageRingManager:
                 await self.db.conn.rollback()
             raise
 
-    async def retrieve_item(self, player: Player, item_name: str, count: int = 1) -> Tuple[bool, str]:
+    async def retrieve_item(self, player: Player, item_name: str, count: int = 1, external_transaction: bool = False) -> Tuple[bool, str]:
         # v3.52.7 纵深防御：负数/0 数量会"越取越多"（current - count 反向增加）
         try:
             count = int(count)
@@ -190,21 +190,27 @@ class StorageRingManager:
             return False, "取出数量必须大于 0"
 
         orig_player = player  # 同步调用方对象，防止其后续 update_player 回滚本次取出
-        await self.db.begin_immediate()
+        # v3.52.8：新增 external_transaction 模式（与 store_item 对齐）——调用方事务内
+        # 挂账不提交，由调用方统一 commit/rollback；业务失败时也不回滚外层事务
+        if not external_transaction:
+            await self.db.begin_immediate()
         try:
             player = await self.db.get_player_by_id(player.user_id)
             if not player:
-                await self.db.conn.rollback()
+                if not external_transaction:
+                    await self.db.conn.rollback()
                 return False, "玩家数据不存在，请重新踏入仙途"
             items = player.get_storage_ring_items()
 
             if item_name not in items:
-                await self.db.conn.rollback()
+                if not external_transaction:
+                    await self.db.conn.rollback()
                 return False, f"储物戒中没有【{item_name}】"
 
             current_count = items[item_name]
             if count > current_count:
-                await self.db.conn.rollback()
+                if not external_transaction:
+                    await self.db.conn.rollback()
                 return False, f"储物戒中【{item_name}】数量不足（当前：{current_count}个）"
 
             if count >= current_count:
@@ -214,14 +220,18 @@ class StorageRingManager:
 
             player.set_storage_ring_items(items)
             orig_player.set_storage_ring_items(items)  # 同步调用方对象
-            await self.db.update_player_fields(player.user_id, storage_ring_items=player.storage_ring_items)
-            await self.db.conn.commit()
+            await self.db.update_player_fields(
+                player.user_id, storage_ring_items=player.storage_ring_items,
+                commit=not external_transaction)
+            if not external_transaction:
+                await self.db.conn.commit()
 
             capacity = self.get_ring_capacity(player.storage_ring)
             used = self.get_used_slots(player)
             return True, f"已从储物戒取出【{item_name}】x{count}（{used}/{capacity}容量）"
         except Exception:
-            await self.db.conn.rollback()
+            if not external_transaction:
+                await self.db.conn.rollback()
             raise
 
     async def discard_item(self, player: Player, item_name: str, count: int = 1) -> Tuple[bool, str]:

@@ -121,6 +121,12 @@ class RedPacketManager:
         refund = sum(state["shares"][i] for i in unclaimed_idx)
         if refund > 0:
             await self.db.add_player_gold(state["sender"], refund)
+        # v3.52.8：清理份额占坑键（rp_{pid}_{i}）——过期红包的坑位键不再残留，
+        # system_config 不因红包玩法无限膨胀（红包主键保留作领取记录展示）
+        for i in range(int(state.get("count", 0)) or 0):
+            await self.db.conn.execute(
+                "DELETE FROM system_config WHERE key = ?", (f"rp_{packet_id}_{i}",))
+        await self.db.conn.commit()
         # 保留展示（领取记录），标记 expired
         return True, (
             f"🧧 红包（{state.get('sender_name', '?')}发出）已过期，"

@@ -59,12 +59,19 @@ class DaoBetManager:
         return date, state
 
     async def _settle_if_due(self) -> str:
-        """次日惰性结算：天道掷骰定胜负，赢方按比例瓜分 90% 奖池"""
+        """次日惰性结算：天道掷骰定胜负，赢方按比例瓜分 90% 奖池
+
+        v3.52.8 修复(奖金滞留)：原实现先 CAS 置 settled 再逐个发奖，中途崩溃
+        则奖金永久滞留（settled 挡住一切重入）。现在结算时把待发清单与开奖
+        参数写入状态（pending_payouts/win_side/win_pool/prize_pool），发放
+        逐笔 CAS 落盘 paid 清单；已结算但 pending 未清的盘自动进入补发流程
+        （sweep 标记 + 5 分钟过期防并发双发）。
+        """
         yesterday = self._today()
-        # 检查"昨天"及之前未结算的盘（含停服跨日）
+        # 检查"昨天"及之前未结算的盘（含停服跨日）+ 已结算但未发完的盘
         try:
             async with self.db.conn.execute(
-                "SELECT key, value FROM system_config WHERE key LIKE ? AND value NOT LIKE '%\"settled\": true%'",
+                "SELECT key, value FROM system_config WHERE key LIKE ?",
                 (self.STATE_PREFIX + "%",)
             ) as cursor:
                 rows = await cursor.fetchall()
@@ -75,38 +82,112 @@ class DaoBetManager:
         results = []
         for key, raw in rows:
             state = self._parse(raw)
-            if not state or state.get("settled") or state.get("date") >= yesterday:
+            if not state or state.get("date") >= yesterday:
                 continue
-            # CAS 抢占结算权
-            claimed = await self.db.ext.syscfg_cas(
-                key, json.dumps({**state, "settled": True}, ensure_ascii=False), raw
-            )
-            if not claimed:
-                continue
-            total = int(state.get("red_pool", 0)) + int(state.get("blue_pool", 0))
-            if total <= 0:
-                continue
-            win_side = "red" if random.random() < 0.5 else "blue"
-            win_pool = int(state.get(f"{win_side}_pool", 0))
-            prize_pool = int(total * (1 - self.HOUSE_CUT))
-            date_str = state.get("date", "?")
 
-            results.append(f"🎲【天道盘 · {date_str}】开盤！天意落在【{'赤龙' if win_side == 'red' else '玄虎'}】！")
-            if win_pool <= 0:
-                results.append("💸 押中者：无。总奖池被天道收讫（全押错了……）")
-                continue
-            # 比例瓜分
-            for uid, bet in (state.get("bets") or {}).items():
-                if bet.get("side") != win_side:
+            if not state.get("settled"):
+                # CAS 抢占结算权
+                claimed = await self.db.ext.syscfg_cas(
+                    key, json.dumps({**state, "settled": True}, ensure_ascii=False), raw
+                )
+                if not claimed:
                     continue
-                amount = int(bet.get("amount", 0))
-                if amount <= 0:
+                state = {**state, "settled": True}
+                total = int(state.get("red_pool", 0)) + int(state.get("blue_pool", 0))
+                if total <= 0:
                     continue
-                payout = int(prize_pool * amount / win_pool)
+                win_side = "red" if random.random() < 0.5 else "blue"
+                win_pool = int(state.get(f"{win_side}_pool", 0))
+                prize_pool = int(total * (1 - self.HOUSE_CUT))
+                date_str = state.get("date", "?")
+
+                results.append(f"🎲【天道盘 · {date_str}】开盤！天意落在【{'赤龙' if win_side == 'red' else '玄虎'}】！")
+                if win_pool <= 0:
+                    results.append("💸 押中者：无。总奖池被天道收讫（全押错了……）")
+                    continue
+                # 待发清单落盘（断点续发的依据）
+                pending = {
+                    uid: {"amount": int(b.get("amount", 0)), "name": b.get("name", uid[:8])}
+                    for uid, b in (state.get("bets") or {}).items()
+                    if b.get("side") == win_side and int(b.get("amount", 0)) > 0
+                }
+                state = {**state, "pending_payouts": pending, "paid": {},
+                         "win_side": win_side, "win_pool": win_pool, "prize_pool": prize_pool}
+                await self.db.ext.set_system_config(key, json.dumps(state, ensure_ascii=False))
+                results.append(f"💰 总奖池 {total:,} 灵石（天道抽成 {int(self.HOUSE_CUT * 100)}%）")
+            else:
+                # 补发路径：已结算但 pending 未清（上次发放中途崩溃）
+                if not (state.get("pending_payouts") or {}):
+                    continue
+                # sweep 锁：5 分钟内他人正在补发则跳过，防并发双发
+                sweep_ts = int(state.get("sweep_ts", 0) or 0)
+                now = int(time.time())
+                if sweep_ts and now - sweep_ts < 300:
+                    continue
+                if not await self.db.ext.syscfg_cas(
+                    key, json.dumps({**state, "sweep_ts": now}, ensure_ascii=False), raw
+                ):
+                    continue
+                results.append("🛠️【天道盘】检测到未完成的奖金发放，正在补发……")
+
+            # ---- 发放（新结算与补发共用）----
+            pending = state.get("pending_payouts") or {}
+            paid = dict(state.get("paid") or {})
+            win_pool = int(state.get("win_pool", 0) or 0)
+            prize_pool = int(state.get("prize_pool", 0) or 0)
+            for uid, info in list(pending.items()):
+                if uid in paid:
+                    continue
+                amount = int(info.get("amount", 0))
+                payout = int(prize_pool * amount / win_pool) if win_pool > 0 else 0
                 if payout > 0:
                     await self.db.add_player_gold(uid, payout)
-                    results.append(f"🎉 {bet.get('name', uid[:8])} 押中 {amount:,} → 赢得 {payout:,} 灵石")
-            results.append(f"💰 总奖池 {total:,} 灵石（天道抽成 {int(self.HOUSE_CUT * 100)}%）")
+                    results.append(
+                        f"🎉 {info.get('name', uid[:8])} 押中 {amount:,} → 赢得 {payout:,} 灵石")
+                paid[uid] = payout
+                # 逐笔 CAS 落盘（崩溃断点；补发路径下 3 连败则留给下轮补发）
+                for _ in range(3):
+                    cur_raw = await self.db.ext.get_system_config(key)
+                    cur = self._parse(cur_raw)
+                    if not cur or uid in (cur.get("paid") or {}):
+                        break  # 已被他人记录，跳过
+                    if await self.db.ext.syscfg_cas(
+                        key, json.dumps({**cur, "paid": paid}, ensure_ascii=False), cur_raw or None
+                    ):
+                        break
+            # 全部发完：清 pending 与 sweep 标记（尽力而为）
+            cur_raw = await self.db.ext.get_system_config(key)
+            cur = self._parse(cur_raw)
+            if cur and len(cur.get("paid") or {}) >= len(pending):
+                await self.db.ext.syscfg_cas(
+                    key,
+                    json.dumps({**cur, "pending_payouts": {}, "sweep_ts": 0}, ensure_ascii=False),
+                    cur_raw or None,
+                )
+
+        # v3.52.8：清理 3 天前已结清的旧盘键（daopan_YYYY-MM-DD 不匹配
+        # purge_dated_config_keys 的 _YYYYMMDD 模式，此前会无限膨胀）。
+        # 注意逐键重读最新值——本调用可能刚把某盘结清，扫描快照已过期。
+        try:
+            cutoff_ts = int(time.mktime(time.strptime(self._today(), "%Y-%m-%d"))) - 3 * 86400
+            async with self.db.conn.execute(
+                "SELECT key, value FROM system_config WHERE key LIKE ?",
+                (self.STATE_PREFIX + "%",)
+            ) as cursor:
+                fresh_rows = await cursor.fetchall()
+            for key, raw in fresh_rows:
+                state = self._parse(raw)
+                if not state or not state.get("settled") or (state.get("pending_payouts") or {}):
+                    continue
+                try:
+                    ts = int(time.mktime(time.strptime(state.get("date", ""), "%Y-%m-%d")))
+                except (ValueError, TypeError):
+                    continue
+                if ts < cutoff_ts:
+                    await self.db.conn.execute("DELETE FROM system_config WHERE key = ?", (key,))
+            await self.db.conn.commit()
+        except Exception as e:
+            logger.warning(f"[天道盘] 旧盘键清理失败（不影响玩法）: {e}")
         return "\n".join(results)
 
     async def bet(self, player, side_str: str, amount_str: str) -> Tuple[bool, str]:

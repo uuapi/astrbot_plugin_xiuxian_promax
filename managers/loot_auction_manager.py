@@ -173,23 +173,31 @@ class LootAuctionManager:
             my_bid = bids.get(player.user_id)
             # 我旧出价的托管款不在当前余额中：加价按"退旧扣新"净额结算
             refund = int(my_bid.get("amount", 0)) if my_bid else 0
-            fresh = await self.db.get_player_by_id(player.user_id)
-            effective = (fresh.gold if fresh else 0) + refund
-            if effective < amount:
-                return False, f"❌ 灵石不足！出价 {amount:,} 需全额托管（当前持有 {effective:,}）。"
+            net = amount - refund  # 竞价规则保证 amount ≥ 旧价+加价幅度，净额始终为正
+
+            # v3.52.8 修复(托管窄窗)：净额单语句原子过账。旧实现 CAS 落注后才动钱
+            # （两条语句：退款+扣款），CAS 与动钱之间崩溃会给从未托管的注退款；
+            # 两条语句之间余额被并发消费时钳 0 扣款会造成托管短少。
+            # 现改为先净额扣款（条件 WHERE 保证余额充足），CAS 失败再成对退回。
+            cursor = await self.db.conn.execute(
+                "UPDATE players SET gold = gold - ? WHERE user_id = ? AND gold >= ?",
+                (net, player.user_id, net),
+            )
+            if cursor.rowcount == 0:
+                return False, (
+                    f"❌ 灵石不足！出价 {amount:,} 需全额托管"
+                    + (f"（退回旧出价 {refund:,} 后需再扣 {net:,}）。" if refund else "。")
+                )
 
             bids[player.user_id] = {"amount": amount, "name": player.user_name or player.user_id[:8]}
             new_state = {**state, "bids": bids}
 
-            # CAS：出价记录抢占成功后才动钱（失败=他人已抢先出价，重读重试）
+            # CAS：出价记录抢占（失败=他人已抢先出价，退回本笔净托管后重读重试）
             if not await self.db.ext.syscfg_cas(
                 self.STATE_KEY, json.dumps(new_state, ensure_ascii=False), raw or None
             ):
+                await self.db.add_player_gold(player.user_id, net)  # 成对回滚，无增发窗口
                 continue
-
-            if refund > 0:
-                await self.db.add_player_gold(player.user_id, refund)
-            await self.db.add_player_gold(player.user_id, -amount)
 
             remain = max(0, state["end_ts"] - now)
             rank = 1 + sum(1 for u, i in bids.items() if u != player.user_id and i.get("amount", 0) > amount)

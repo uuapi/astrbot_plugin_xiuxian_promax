@@ -1,6 +1,7 @@
 # core/pill_manager.py
 
 import asyncio
+import json
 import time
 from typing import Optional, Tuple
 from astrbot.api import logger
@@ -169,21 +170,50 @@ class PillManager:
             if pill_name not in inventory or inventory[pill_name] <= 0:
                 return False, f"你的背包中没有【{pill_name}】！"
 
+            # v3.52.8：每日限用机制落地（daily_pill_usage 此前是死字段，无任何读写）。
+            # 跨自然日自动重置计数；配置了 daily_limit 的丹药达限拒服，
+            # 未配置的仅计数不限用——行为默认不变，机制可由配置激活。
+            today = time.strftime("%Y-%m-%d")
+            if (player.last_daily_reset or "") != today:
+                player.last_daily_reset = today
+                player.daily_pill_usage = "{}"
+            try:
+                usage = json.loads(player.daily_pill_usage) if player.daily_pill_usage else {}
+            except (json.JSONDecodeError, TypeError):
+                usage = {}
+            daily_limit = pill_data.get("daily_limit")
+            if daily_limit and usage.get(pill_name, 0) >= int(daily_limit):
+                return False, (
+                    f"❌ 【{pill_name}】今日服用次数已达上限（{int(daily_limit)}/日），明日再服。"
+                )
+
             if subtype == "exp":
-                return await self._use_exp_pill(player, pill_name, pill_data)
+                result = await self._use_exp_pill(player, pill_name, pill_data)
             elif subtype == "resurrection":
-                return await self._use_resurrection_pill(player, pill_name, pill_data)
+                result = await self._use_resurrection_pill(player, pill_name, pill_data)
             elif effect_type == "temporary":
-                return await self._use_temporary_pill(player, pill_name, pill_data)
+                result = await self._use_temporary_pill(player, pill_name, pill_data)
             elif effect_type == "permanent":
-                return await self._use_permanent_pill(player, pill_name, pill_data)
+                result = await self._use_permanent_pill(player, pill_name, pill_data)
             elif effect_type == "instant":
-                return await self._use_instant_pill(player, pill_name, pill_data)
+                result = await self._use_instant_pill(player, pill_name, pill_data)
             elif "effect" in pill_data or any(k.startswith("add_") for k in pill_data.keys()):
                 # legacy 丹药（items.json 中 type=丹药，effect 字段直接含 add_xxx）
-                return await self._use_legacy_pill(player, pill_name, pill_data)
+                result = await self._use_legacy_pill(player, pill_name, pill_data)
             else:
                 return False, f"未知的丹药类型：{effect_type}"
+
+            if not result[0]:
+                return result
+            # 计入每日用量并落盘（在锁内执行，与并发服用天然互斥）
+            usage[pill_name] = usage.get(pill_name, 0) + 1
+            player.daily_pill_usage = json.dumps(usage, ensure_ascii=False)
+            await self.db.update_player_fields(
+                player.user_id,
+                daily_pill_usage=player.daily_pill_usage,
+                last_daily_reset=player.last_daily_reset,
+            )
+            return result
 
     async def _use_legacy_pill(self, player: Player, pill_name: str, pill_data: dict) -> Tuple[bool, str]:
         """服用 legacy 丹药（items.json：effect = {add_experience/add_hp/add_attack/...}）"""
@@ -454,11 +484,13 @@ class PillManager:
                 if actual_gain < gain:
                     gains_blocked[attr_name] = f"部分受限(+{actual_gain:.0f}/{gain})"
 
-                permanent_gains[level_key][attr_key] += actual_gain
+                # v3.52.8：追踪值与实际生效值同步取整——原 float 累加会略大于实际
+                # int 生效值，导致 30% 封顶提前误触发
+                permanent_gains[level_key][attr_key] += int(actual_gain)
                 setattr(player, attr_key, getattr(player, attr_key) + int(actual_gain))
                 gains_applied[attr_name] = int(actual_gain)
             else:
-                permanent_gains[level_key][attr_key] += gain
+                permanent_gains[level_key][attr_key] += int(gain)
                 setattr(player, attr_key, getattr(player, attr_key) + int(gain))
                 gains_applied[attr_name] = int(gain)
 

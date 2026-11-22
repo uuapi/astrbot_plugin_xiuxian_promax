@@ -8,7 +8,7 @@
 
 <br>
 
-<a href="https://github.com/uuapi/astrbot_plugin_xiuxian_promax/releases"><img src="https://img.shields.io/badge/Version-v3.52.7-D4AF37?style=flat-square&labelColor=1a1a2e" alt="Version"/></a>
+<a href="https://github.com/uuapi/astrbot_plugin_xiuxian_promax/releases"><img src="https://img.shields.io/badge/Version-v3.52.8-D4AF37?style=flat-square&labelColor=1a1a2e" alt="Version"/></a>
 <a href="https://www.python.org/"><img src="https://img.shields.io/badge/Python-3.10+-3776AB?style=flat-square&logo=python&logoColor=white" alt="Python"/></a>
 <a href="https://github.com/AstrBotDevs/AstrBot"><img src="https://img.shields.io/badge/AstrBot-3.4+-FF6B35?style=flat-square" alt="AstrBot"/></a>
 <a href="https://github.com/uuapi/astrbot_plugin_xiuxian_promax/actions"><img src="https://img.shields.io/badge/Tests-182%20Passing-2EA043?style=flat-square&logo=githubactions&logoColor=white" alt="Tests"/></a>
@@ -533,6 +533,7 @@ ruff check . --select F821,F823,F401,F841,B007,E722,E711,E712,E731,E741,F541,E40
 | **v3.52.5** | 🖼️ 卡片扩展 | 第一批 9 条指令卡片化：六大排行（状元/榜眼/探花）+ 我的宗门 + 银行 + 突破信息；新增 5 个卡片开关（总数 15）+ 修复 OpenMoji 缺字豆腐块 |
 | **v3.52.6** | 🖼️ 图鉴卡片 | 第二批 6 条指令卡片化：渲染器新增网格布局（锁定灰格？？？/解锁金格/★生效中）；称号图鉴按品阶分格 + 妖兽图鉴 + 收集档位 + 套装鉴识 + 成就 + 回忆录；卡片开关总数 21 |
 | **v3.52.7** | 🔧 并发与资金安全加固 | 修复 10 项缺陷：坊市购买/下架物品蒸发（交易后背包未落库）、天道盘 CAS 循环退款资金增发、丹药并发服用白嫖（use_pill 无事务）、红包并发份额烧毁 + 同用户双抢、赠予接收/拒绝并发复制、商店入库失败仍扣款、Boss 拍卖托管双退、黑市幽灵物品（改真实交付）、银行逾期删号竞态误杀；另修循环导入、满级突破 IndexError、测试 cwd 依赖、储物戒负数数量纵深校验；帮助版本号与 metadata 对齐 |
+| **v3.52.8** | 🔧 第二轮资金与状态键加固 | 拍卖出价改净额单语句原子过账（CAS 失败成对回滚，消除托管窄窗）；赠予"扣物→建单"事务化（两步蒸发窗口）+ 过期清理改先占行后返还（幂等不复制不双退）；商店购买事务内复核货架现价（防刷新旧价成交）+ 删除死代码；天道盘结算奖金断点续发（崩溃自动补发 + sweep 锁防双发）+ 3 天前旧盘键清理；每日限丹机制落地（daily_limit 达限拒服/跨日重置，此前为死字段）+ 永久丹 30% 封顶取整漂移修复；过期红包份额占坑键清理；新增 8 项回归测试（累计 21 项） |
 
 </details>
 

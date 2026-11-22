@@ -286,22 +286,36 @@ class StorageRingHandler:
             yield event.plain_result("不能赠予物品给自己")
             return
 
-        # 先从储物戒中取出物品
-        success, _ = await self.storage_ring_manager.retrieve_item(player, item_name, count)
-        if not success:
-            yield event.plain_result("赠予失败：无法取出物品")
-            return
+        # v3.52.8 修复(两步蒸发窗口)：扣物与建赠予单原子化——原实现 retrieve_item
+        # 独立提交后，若建单前异常/崩溃，物品已扣但无赠予记录，永久蒸发。
+        await self.db.begin_immediate()
+        try:
+            # 事务内重取最新数据（装饰器快照可能过期，整包写回会覆盖并发变更）
+            fresh = await self.db.get_player_by_id(player.user_id)
+            if fresh:
+                player = fresh
+            success, _ = await self.storage_ring_manager.retrieve_item(
+                player, item_name, count, external_transaction=True)
+            if not success:
+                await self.db.conn.rollback()
+                yield event.plain_result("赠予失败：无法取出物品")
+                return
 
-        # 存储待处理的赠予请求到数据库
-        sender_name = event.get_sender_name()
-        await self.db.ext.create_pending_gift(
-            receiver_id=target_id,
-            sender_id=player.user_id,
-            sender_name=sender_name,
-            item_name=item_name,
-            count=count,
-            expires_hours=24  # 24小时后过期
-        )
+            # 存储待处理的赠予请求到数据库（commit=False：与扣物同事务）
+            sender_name = event.get_sender_name()
+            await self.db.ext.create_pending_gift(
+                receiver_id=target_id,
+                sender_id=player.user_id,
+                sender_name=sender_name,
+                item_name=item_name,
+                count=count,
+                expires_hours=24,  # 24小时后过期
+                commit=False,
+            )
+            await self.db.conn.commit()
+        except Exception:
+            await self.db.conn.rollback()
+            raise
 
         yield event.plain_result(
             f"📦 赠予请求已发送！\n"

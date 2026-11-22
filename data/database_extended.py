@@ -758,9 +758,10 @@ class DatabaseExtended:
     # ===== 赠予请求系统 CRUD =====
     
     async def create_pending_gift(self, receiver_id: str, sender_id: str, sender_name: str,
-                                   item_name: str, count: int, expires_hours: int = 24) -> int:
+                                   item_name: str, count: int, expires_hours: int = 24,
+                                   commit: bool = True) -> int:
         """创建赠予请求
-        
+
         Args:
             receiver_id: 接收者ID
             sender_id: 发送者ID
@@ -768,7 +769,8 @@ class DatabaseExtended:
             item_name: 物品名称
             count: 物品数量
             expires_hours: 过期时间（小时），默认24小时
-            
+            commit: 事务内调用请传 False（v3.52.8：赠予"扣物→建单"原子化）
+
         Returns:
             新创建的赠予请求ID
         """
@@ -784,7 +786,8 @@ class DatabaseExtended:
             """,
             (receiver_id, sender_id, sender_name, item_name, count, now, expires_at)
         )
-        await self.conn.commit()
+        if commit:
+            await self.conn.commit()
         return cursor.lastrowid
     
     async def get_pending_gift(self, receiver_id: str, cleanup: bool = True) -> Optional[dict]:
@@ -869,7 +872,13 @@ class DatabaseExtended:
         await self.conn.commit()
     
     async def cleanup_expired_gifts(self):
-        """清理过期的赠予请求，并将物品返还给发送者（物品已从发送者储物戒扣除，直接删除会蒸发）"""
+        """清理过期的赠予请求，并将物品返还给发送者（物品已从发送者储物戒扣除，直接删除会蒸发）
+
+        v3.52.8 修复(复制窗口)：改为"先占行（DELETE rowcount=1）再返还"。
+        原实现先返还后删行——返还落库与删行之间崩溃，赠予行仍可被接收，
+        同一物品双方到账（复制）。占行优先后最坏情况是崩溃窗口内物品暂扣
+        （无赠予行可领），绝不产生复制；并发清理/接收/拒绝也只有抢到行的一方继续。
+        """
         import json
         import time
         now = int(time.time())
@@ -879,10 +888,12 @@ class DatabaseExtended:
             (now,)
         ) as cursor:
             expired = await cursor.fetchall()
-        if not expired:
-            return
 
         for gift_id, sender_id, item_name, count in expired:
+            # 先占行：并发路径下只有 rowcount=1 的一方负责返还
+            cursor = await self.conn.execute("DELETE FROM pending_gifts WHERE id = ?", (gift_id,))
+            if cursor.rowcount != 1:
+                continue
             async with self.conn.execute(
                 "SELECT storage_ring_items FROM players WHERE user_id = ?",
                 (sender_id,)
@@ -902,7 +913,6 @@ class DatabaseExtended:
                     "UPDATE players SET storage_ring_items = ? WHERE user_id = ?",
                     (json.dumps(items, ensure_ascii=False), sender_id)
                 )
-            await self.conn.execute("DELETE FROM pending_gifts WHERE id = ?", (gift_id,))
         await self.conn.commit()
     
     # ===== Phase 3: 银行贷款系统 CRUD =====
