@@ -221,6 +221,10 @@ class XiuXianPlugin(Star):
         # ===== 功能处理器 =====
         self.sect_handlers = SectHandlers(self.db, self.sect_mgr, self.config_manager)
         self.combat_handlers = CombatHandlers(self.db, self.combat_mgr, self.config_manager)
+        # v3.55.0 心魔挑战：PVE 影子对决
+        from .managers.xinmo_manager import XinmoManager
+        self.xinmo_mgr = XinmoManager(self.db)
+        self.combat_handlers.xinmo_mgr = self.xinmo_mgr
         self.ranking_handlers = RankingHandlers(self.db, self.rank_mgr)
         self.rift_handlers = RiftHandlers(self.db, self.rift_mgr)
         self.adventure_handlers = AdventureHandlers(self.db, self.adventure_mgr)
@@ -3542,6 +3546,18 @@ class XiuXianPlugin(Star):
     @require_whitelist
     async def handle_almanac_cmd(self, event: AstrMessageEvent):
         async for r in self.misc_handler.handle_almanac(event):
+            yield r
+
+    @filter.command("心魔挑战", "以自身面板生成心魔复制体：每日1次，胜得修为称号，败损修行")
+    @require_whitelist
+    async def handle_xinmo_cmd(self, event: AstrMessageEvent):
+        async for r in self.combat_handlers.handle_xinmo(event):
+            yield r
+
+    @filter.command("心魔榜", "查看全服降魔排行")
+    @require_whitelist
+    async def handle_xinmo_board_cmd(self, event: AstrMessageEvent):
+        async for r in self.combat_handlers.handle_xinmo_board(event):
             yield r
 
     @filter.command("收集图鉴", "查看称号图鉴收集进度与奖励")

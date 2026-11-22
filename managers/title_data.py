@@ -5,7 +5,8 @@
   manual: 管理员/商店/师德等手动授予
   breakthrough: 突破至某境界自动
   win_pvp / spar_count / boss_kill / escort_count / karma / virtue / reincarnation /
-  alchemy_perfect / hybrid / pet_level / furnance / sect_battle / rebirth / festival / demon_catch
+  alchemy_perfect / hybrid / pet_level / furnance / sect_battle / rebirth / festival / demon_catch /
+  xinmo_kill（心魔挑战胜场，v3.55.0）
 加成 stats: atk/def 物理伤害、magic 法伤、phys_def/magic_def 防御、crit 会心率%、lifesteal 吸血%、exp 修为%、luck 气运
 同一时间只生效最高品阶的一个称号加成；称号本身全部永久收藏在图鉴中。
 """
@@ -55,6 +56,8 @@ TITLES = [
     T("勤修不辍", 1, "cultivate_count", condition=10, exp=0.02),
     T("仙途行者", 1, "cultivate_count", condition=50, exp=0.03),
     T("仙途新星", 2, "manual", condition=None, atk=40, exp=0.05),  # 新手七日第7日全勤奖励（first_week 颁发）
+    T("初降心魔", 1, "xinmo_kill", condition=1, atk=10),
+    T("心如明镜", 2, "xinmo_kill", condition=10, crit=5),
 
     # ========== 灵品（进阶玩法，25）==========
     T("百战老兵", 2, "spar_count", condition=50, atk=40),

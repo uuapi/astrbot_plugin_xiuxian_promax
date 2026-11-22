@@ -317,3 +317,35 @@ class CombatHandlers:
             pass
 
         yield event.plain_result(final_log)
+    # ===== v3.55.0 心魔挑战 =====
+
+    async def handle_xinmo(self, event: AstrMessageEvent):
+        """/心魔挑战：以自身面板生成心魔复制体，每日 1 次，胜得修为败损修行"""
+        user_id = event.get_sender_id()
+        xinmo_mgr = getattr(self, "xinmo_mgr", None)
+        if xinmo_mgr is None:
+            yield event.plain_result("🧠 心魔挑战暂未开启。")
+            return
+
+        stats = await self._prepare_combat_stats(user_id)
+        if not stats:
+            yield event.plain_result("❌ 道友尚未踏入仙途，请先发送 /我要修仙。")
+            return
+
+        player = await self.db.get_player_by_id(user_id)
+        if not player:
+            yield event.plain_result("❌ 道友尚未踏入仙途，请先发送 /我要修仙。")
+            return
+
+        ok, msg = await xinmo_mgr.challenge(player, stats)
+        yield event.plain_result(msg)
+
+    async def handle_xinmo_board(self, event: AstrMessageEvent):
+        """/心魔榜：全服降魔排行"""
+        xinmo_mgr = getattr(self, "xinmo_mgr", None)
+        if xinmo_mgr is None:
+            yield event.plain_result("🧠 心魔榜暂未开启。")
+            return
+        player = await self.db.get_player_by_id(event.get_sender_id())
+        text = await xinmo_mgr.get_board(player)
+        yield event.plain_result(text)

@@ -8,7 +8,7 @@
 
 <br>
 
-<a href="https://github.com/uuapi/astrbot_plugin_xiuxian_promax/releases"><img src="https://img.shields.io/badge/Version-v3.54.0-D4AF37?style=flat-square&labelColor=1a1a2e" alt="Version"/></a>
+<a href="https://github.com/uuapi/astrbot_plugin_xiuxian_promax/releases"><img src="https://img.shields.io/badge/Version-v3.55.0-D4AF37?style=flat-square&labelColor=1a1a2e" alt="Version"/></a>
 <a href="https://www.python.org/"><img src="https://img.shields.io/badge/Python-3.10+-3776AB?style=flat-square&logo=python&logoColor=white" alt="Python"/></a>
 <a href="https://github.com/AstrBotDevs/AstrBot"><img src="https://img.shields.io/badge/AstrBot-3.4+-FF6B35?style=flat-square" alt="AstrBot"/></a>
 <a href="https://github.com/uuapi/astrbot_plugin_xiuxian_promax/actions"><img src="https://img.shields.io/badge/Tests-182%20Passing-2EA043?style=flat-square&logo=githubactions&logoColor=white" alt="Tests"/></a>
@@ -17,7 +17,7 @@
 
 <br>
 
-**270 指令** · **43 管理器** · **25+ 玩法系统** · **214 项自动化测试** · **并发加固**
+**272 指令** · **43 管理器** · **25+ 玩法系统** · **226 项自动化测试** · **并发加固**
 
 [功能特色](#-功能特色) · [快速上手](#-快速上手) · [指令大全](#-指令大全) · [架构设计](#-架构设计) · [测试](#-测试) · [版本历程](#-版本历程) · [配置](#%EF%B8%8F-配置) · [贡献](#-贡献)
 
@@ -40,6 +40,7 @@
 | 系统 | 亮点 |
 |:---|:---|
 | **决斗 / 切磋** | 五行克制 · 装备加成 · 灵兽协战 · 称号增益 |
+| **心魔挑战** | 自身镜像强化体 · 道心削弱心魔 · 五行克己 · 全服降魔榜 |
 | **段位天梯** | 6 大段位 · 积分晋升 · 里程碑奖励 |
 | **镇妖塔** | 逐层递增 · 指数难度 · 里程碑掉落 · 全服榜 |
 | **世界 Boss** | 全服协作 · 伤害排行 · 掉落竞拍 |
@@ -181,6 +182,7 @@ git clone https://github.com/uuapi/astrbot_plugin_xiuxian_promax.git
 | 指令 | 说明 |
 |:---|:---|
 | `/决斗 @人` / `/切磋 @人` | PvP（天梯积分） |
+| `/心魔挑战` / `/心魔榜` | PVE 影子对决：镜像自身面板+境界强化+五行克制，道心削弱心魔；每日1次，胜得修为称号 |
 | `/天梯` / `/天梯榜` / `/天梯领取` | 段位系统 |
 | `/除妖` / `/除妖信息` | 野外战斗 |
 | `/妖兽图鉴` | 收集图鉴 |
@@ -329,7 +331,7 @@ git clone https://github.com/uuapi/astrbot_plugin_xiuxian_promax.git
 ```
 astrbot_plugin_xiuxian_promax/
 │
-├── main.py                        # 指令注册入口（270 条指令）
+├── main.py                        # 指令注册入口（272 条指令）
 ├── config_manager.py              # 配置管理器
 ├── models.py / models_extended.py # 数据模型
 │
@@ -539,6 +541,7 @@ ruff check . --select F821,F823,F401,F841,B007,E722,E711,E712,E731,E741,F541,E40
 | **v3.52.9** | 🏗️ 架构级：写门闸消除事务裹挟 | **Write Gate（连接代理）**：显式事务期间，其他协程的全部写语句/commit/rollback 在门闸排队等待，不再落入他人打开的事务随其提交/回滚（此前为共享单连接的固有缺陷，可吞掉他人已承诺的扣款）；等待 15s 上限快速失败防长事务泄漏演变为全局挂死；兼容 await 与 `async with` 两种消费方式（全仓 109 处）；重置丹退款灵石改原子增量（移出快照写回）；红包发送"扣款→建单"事务化；新增 5 项门闸并发回归测试（含事务裹挟消除的核心断言，累计 208 项测试） |
 | **v3.53.0** | 📖 新玩法：丹药图鉴 | 服用的丹药自动收录图鉴（`/丹药图鉴`）：四源丹药约 200 种按突破/修为/功能三类分册，网格卡片渲染（已服用金格、未收录灰格）；25/50/75/100% 四档收集比例自动发放灵石+修为档位奖励（查看即领，syscfg_cas 占坑幂等防双领）；记录点在 use_pill 丹药锁内（串行防覆盖）；档位奖励可经 WebUI PILL_CODEX.TIER_REWARDS 配置；新增 6 项回归测试 |
 | **v3.54.0** | 📜 新玩法：仙界黄历 | 每日全服宜忌（`/仙界黄历`）：随机 2 宜 1 忌（闭关/历练/奇遇/突破/灵田），宜事收益×1.10、忌事×0.90（突破场景减半 ±5%）；与天象叠加结算，复用 4 处天象结算点（出关/历练/奇遇/突破）同一 try/except 模式接入；每日首次生成全服广播（与天象播报同聚合循环）；syscfg_cas 抢占生成权防并发首掷分歧；almanac_{YYYYMMDD} 日期键自动清理；值神/吉方/宜忌风味词随机；新增 6 项回归测试（累计 220 项） |
+| **v3.55.0** | 🧠 新玩法：心魔挑战 | PVE 影子对决（`/心魔挑战`，每日 1 次）：以自身战斗面板生成心魔复制体——HP/ATK 随境界线性强化（越强心魔越强）、道心每点削弱心魔 1%（上限 20%）、五行取克己之性、功法词条镜像（灵兽协战除外）；胜得修为（300×境界）+ 称号计数（初降心魔/心如明镜）+ 胜场累计，败按伤害比例结算修为并损 2% 修为；`/心魔榜` 全服降魔排行（xinmo_wins 计数键扫描，ladder 榜同款）；新增 7 项回归测试（累计 227 项） |
 
 </details>
 
