@@ -542,6 +542,15 @@ class PlayerHandler:
                     tide_note += f"\n🌦️ 天象加护：修炼收益{wm:.0%}倍" if wm > 1 else f"\n🌦️ 天象晦暗：修炼收益{wm:.0%}倍"
         except Exception:
             pass
+        # v3.54.0 仙界黄历：宜闭关/忌闭关
+        try:
+            if getattr(self, "almanac_ref", None):
+                alm = await self.almanac_ref.get_multiplier("cultivate")
+                if alm != 1.0:
+                    gained_exp = int(gained_exp * alm)
+                    tide_note += f"\n📜 黄历宜修：修炼收益{alm:.0%}倍" if alm > 1 else f"\n📜 黄历忌修：修炼收益{alm:.0%}倍"
+        except Exception:
+            pass
         try:
             from ..managers.samsara_manager import SamsaraManager
             from ..managers.collection_manager import CollectionManager

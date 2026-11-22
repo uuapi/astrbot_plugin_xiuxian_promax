@@ -348,6 +348,14 @@ class AdventureManager:
                     rewards["exp"] = int(rewards["exp"] * wm)
             except Exception:
                 pass
+            # v3.54.0 仙界黄历：宜历练/忌历练
+            try:
+                from .almanac_manager import AlmanacManager
+                alm = await AlmanacManager(self.db).get_multiplier("adventure")
+                if alm != 1.0:
+                    rewards["exp"] = int(rewards["exp"] * alm)
+            except Exception:
+                pass
             try:
                 from .samsara_manager import SamsaraManager
                 from .collection_manager import CollectionManager

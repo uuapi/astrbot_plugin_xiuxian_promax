@@ -409,6 +409,10 @@ class XiuXianPlugin(Star):
         from .managers.rift_enhance import RiftEnhanceManager
         from .managers.player_bounty_manager import PlayerBountyManager
         self.weather_mgr = WeatherManager(self.db)
+        # v3.54.0 仙界黄历：每日宜忌全服加成
+        from .managers.almanac_manager import AlmanacManager
+        self.almanac_mgr = AlmanacManager(self.db)
+        self.misc_handler.almanac_ref = self.almanac_mgr
         self.collection_mgr = CollectionManager(self.db, self.title_mgr)
         self.ckms_mgr = CheckinMilestoneManager(self.db)
         self.season_mgr = SeasonManager(self.db)
@@ -783,6 +787,13 @@ class XiuXianPlugin(Star):
                             await self._broadcast_world_boss_spawn(text)
                 except Exception as e:
                     logger.warning(f"每日天象播报异常: {e}")
+                # v3.54.0 仙界黄历每日播报（日键一次性）
+                try:
+                    alm_text = await self.almanac_mgr.ensure_daily_broadcast()
+                    if alm_text:
+                        await self._broadcast_world_boss_spawn(alm_text)
+                except Exception as e:
+                    logger.warning(f"每日黄历播报异常: {e}")
                 # v3.20.0 天材地宝定时刷新（30% 概率，刷新即全服广播）
                 try:
                     spawned, treasure_text = await self.treasure_mgr.try_spawn()
@@ -3525,6 +3536,12 @@ class XiuXianPlugin(Star):
     @require_whitelist
     async def handle_weather_cmd(self, event: AstrMessageEvent):
         async for r in self.weather_mgr.handle_weather(event):
+            yield r
+
+    @filter.command("仙界黄历", "查看今日黄历：宜事收益乘1.1忌事打九折，全服同览")
+    @require_whitelist
+    async def handle_almanac_cmd(self, event: AstrMessageEvent):
+        async for r in self.misc_handler.handle_almanac(event):
             yield r
 
     @filter.command("收集图鉴", "查看称号图鉴收集进度与奖励")

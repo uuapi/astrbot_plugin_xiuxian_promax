@@ -17,7 +17,7 @@ class MiscHandler:
     async def handle_help(self, event: AstrMessageEvent, keyword: str = ""):
         """显示修仙指令大全（v3.24.0：支持 /修仙帮助 <关键字> 过滤相关指令行）"""
         help_text = (
-            "📖 修仙指令大全 v3.53.0 (丹道通鉴版)\n"
+            "📖 修仙指令大全 v3.54.0 (黄历问天版)\n"
             "💡 提示：所有指令均可带 / 前缀使用\n"
             "━━━━━━━━━━━━━━━\n"
             "【🌟 入门与基础】\n"
@@ -109,6 +109,7 @@ class MiscHandler:
             "\n"
             "【🎴 新玩法（v3.19.0）】\n"
             "  /修仙天气 (每日天象: 闭关/历练/奇遇/突破加成)\n"
+            "  /仙界黄历 (每日宜忌: 宜事收益乘1.1忌事打九折)\n"
             "  /天骄榜 (90天赛季, 按修为增量排名)\n"
             "  /观礼 /观礼下注 <金额> [败] (渡劫期突破全服下注)\n"
             "  /轮回信息 /轮回宝阁 /轮回兑换 <编号> (周目加成+轮回玉)\n"
@@ -197,6 +198,15 @@ class MiscHandler:
             yield event.plain_result("\n".join(out))
             return
         yield event.plain_result(help_text)
+
+    async def handle_almanac(self, event: AstrMessageEvent):
+        """仙界黄历：查看今日宜忌（v3.54.0，almanac_ref 由主控注入）"""
+        almanac = getattr(self, "almanac_ref", None)
+        if almanac is None:
+            yield event.plain_result("📜 仙界黄历暂未开启。")
+            return
+        async for r in almanac.handle_almanac(event):
+            yield r
 
     @player_required
     async def handle_daily_helper(self, player: Player, event: AstrMessageEvent):

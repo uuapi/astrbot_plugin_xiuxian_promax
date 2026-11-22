@@ -54,6 +54,12 @@ class EncounterManager:
             chance = int(chance * em)
         except Exception:
             pass
+        # v3.54.0 仙界黄历：宜奇遇/忌奇遇
+        try:
+            from .almanac_manager import AlmanacManager
+            chance = int(chance * await AlmanacManager(self.db).get_multiplier("encounter"))
+        except Exception:
+            pass
         # v3.22.0 惊签：奇遇触发加成（异常安全）
         try:
             from .fortune_stick_manager import FortuneStickManager

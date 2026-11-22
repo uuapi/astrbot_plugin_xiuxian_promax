@@ -202,6 +202,15 @@ class BreakthroughManager:
                 cost_note += f"\n🌦️ 天象{'助道' if wm > 1 else '晦暗'}：成功率{wm:.0%}倍"
         except Exception:
             pass
+        # v3.54.0 仙界黄历：宜突破/忌突破（效果为天象一半，±5%）
+        try:
+            from ..managers.almanac_manager import AlmanacManager
+            alm = await AlmanacManager(self.db).get_multiplier("breakthrough")
+            if alm != 1.0:
+                success_rate = min(0.98, success_rate * alm)
+                cost_note += f"\n📜 黄历{'宜突破' if alm > 1 else '忌突破'}：成功率{alm:.0%}倍"
+        except Exception:
+            pass
 
         # 渡劫必成符（道韵满100积累）：直接成功
         guarantee = int(pity_data.get("daoyun_guarantee", 0))
