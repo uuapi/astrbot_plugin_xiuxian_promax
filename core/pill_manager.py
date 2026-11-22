@@ -216,11 +216,15 @@ class PillManager:
             # 计入每日用量并落盘（在锁内执行，与并发服用天然互斥）
             usage[pill_name] = usage.get(pill_name, 0) + 1
             player.daily_pill_usage = json.dumps(usage, ensure_ascii=False)
-            await self.db.update_player_fields(
-                player.user_id,
-                daily_pill_usage=player.daily_pill_usage,
-                last_daily_reset=player.last_daily_reset,
-            )
+            try:
+                await self.db.update_player_fields(
+                    player.user_id,
+                    daily_pill_usage=player.daily_pill_usage,
+                    last_daily_reset=player.last_daily_reset,
+                )
+            except Exception as e:
+                # 丹已服用、计数未记：方向利玩家且不破坏资金安全，error 留痕即可
+                logger.error(f"【每日限丹】用量落库失败（丹已扣，计数未记）: {e}")
             return result
 
     async def _use_legacy_pill(self, player: Player, pill_name: str, pill_data: dict) -> Tuple[bool, str]:

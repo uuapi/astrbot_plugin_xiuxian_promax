@@ -69,8 +69,8 @@ class XinmoTest(unittest.IsolatedAsyncioTestCase):
     async def test_build_demon_mirror_and_counter(self):
         stats = mkstats(effects={"lifesteal": 10, "pet_damage_mult": 0.3, "crit_rate": 5})
         demon = self.mgr.build_demon_stats(stats, level_index=5, daoxin=0)
-        self.assertEqual(demon.max_hp, int(5000 * (0.90 + 5 * 0.015)), "HP = 基线0.9 + 境界强化")
-        self.assertEqual(demon.atk, int(200 * (0.85 + 5 * 0.010)), "ATK = 基线0.85 + 境界强化")
+        self.assertEqual(demon.max_hp, int(5000 * (0.90 + 5 * 0.008)), "HP = 基线0.9 + 境界强化")
+        self.assertEqual(demon.atk, int(200 * (0.85 + 5 * 0.006)), "ATK = 基线0.85 + 境界强化")
         self.assertEqual(demon.element, "水", "五行同源镜像")
         self.assertNotIn("pet_damage_mult", demon.effects, "心魔不能召唤玩家的灵兽")
         self.assertEqual(demon.effects.get("lifesteal"), 10, "功法词条镜像")

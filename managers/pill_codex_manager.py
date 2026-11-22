@@ -105,10 +105,15 @@ class PillCodexManager:
             claim_key = f"{self.CLAIM_PREFIX}{player.user_id}_{p}"
             if not await self.db.ext.syscfg_cas(claim_key, "1", None):
                 continue  # 已领取过
-            if tier["gold"] > 0:
-                await self.db.add_player_gold(player.user_id, tier["gold"])
-            if tier["exp"] > 0:
-                await self.db.add_player_exp(player.user_id, tier["exp"])
+            try:
+                if tier["gold"] > 0:
+                    await self.db.add_player_gold(player.user_id, tier["gold"])
+                if tier["exp"] > 0:
+                    await self.db.add_player_exp(player.user_id, tier["exp"])
+            except Exception as e:
+                # 占坑已成功、发放失败：奖励暂扣（安全方向不双发），留痕供对账补发
+                logger.error(f"【丹药图鉴】{p}% 档奖励发放失败（uid={player.user_id}）: {e}")
+                continue
             msgs.append(
                 f"🏆 丹药图鉴 {p}% 档达成！奖励灵石 {tier['gold']:,} + 修为 {tier['exp']:,}（已发放）"
             )

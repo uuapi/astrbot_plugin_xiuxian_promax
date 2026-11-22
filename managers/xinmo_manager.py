@@ -29,9 +29,9 @@ class XinmoManager:
     DAILY_LIMIT = 1                      # 每日次数
     BASE_REWARD_EXP = 300                # 基础修为奖励 ×（境界+1）
     HP_BASE = 0.90                       # 心魔血量基线（低境界弱于本体，先手可胜）
-    HP_PER_LEVEL = 0.015                 # 心魔血量强化 / 境界
+    HP_PER_LEVEL = 0.008                 # 心魔血量强化 / 境界（放缓：避免消耗战硬翻转）
     ATK_BASE = 0.85                      # 心魔攻击基线
-    ATK_PER_LEVEL = 0.010                # 心魔攻击强化 / 境界
+    ATK_PER_LEVEL = 0.006                # 心魔攻击强化 / 境界
     DAOXIN_DISCOUNT_PER_POINT = 0.01     # 道心削弱心魔 / 点
     DAOXIN_DISCOUNT_CAP = 0.20           # 道心削弱上限
     COEFF_FLOOR = 0.8                    # 强化系数下限
@@ -92,6 +92,18 @@ class XinmoManager:
                 "💡 心魔无处不在，明日再来；道行越高，心魔越强。"
             )
 
+        try:
+            return await self._do_challenge(player, player_stats)
+        except Exception:
+            # 异常时退还当日次数，避免"次数被吞"（claim 占坑补偿）
+            try:
+                await self.db.ext.syscfg_adjust_number(self._cnt_key(uid), -1)
+            except Exception:
+                pass
+            raise
+
+    async def _do_challenge(self, player, player_stats: CombatStats) -> Tuple[bool, str]:
+        uid = player.user_id
         # 道心削弱心魔
         daoxin = 0
         try:
@@ -103,6 +115,7 @@ class XinmoManager:
         demon = self.build_demon_stats(player_stats, player.level_index, daoxin)
         result = CombatManager.player_vs_boss(player_stats, demon)
         won = result.get("winner") == player_stats.user_id
+        draw = result.get("winner") == "平局"
 
         lines = list(result.get("combat_log") or [])
         # 战报过长时保留头尾（100 回合上限）
@@ -140,16 +153,26 @@ class XinmoManager:
             )
             return True, msg
 
-        # 战败：无奖励（胜才得修为），道心受挫损失 2% 修为
-        penalty = int(max(0, player.experience) * self.LOSE_EXP_PENALTY_RATIO)
+        # 战败/平局：无奖励（胜才得修为），道心受挫损失修为（平局减半）
+        ratio = self.LOSE_EXP_PENALTY_RATIO * (0.5 if draw else 1.0)
+        penalty = int(max(0, player.experience) * ratio)
         if penalty > 0:
             await self.db.add_player_exp(uid, -penalty)
+        if draw:
+            tail = (
+                f"⚖️ 与心魔战至天地俱静，势均力敌。\n"
+                f"📉 道心微损，修为 -{penalty:,}（{ratio:.0%}）\n"
+                f"💡 再强一分装备，或再修一分道心，明日再斩。"
+            )
+        else:
+            tail = (
+                f"💫 不敌心魔，道心蒙尘。\n"
+                f"📉 道心受挫，修为 -{penalty:,}（{self.LOSE_EXP_PENALTY_RATIO:.0%}）\n"
+                f"💡 提升装备、修炼道心，或换一日心境再来。"
+            )
         msg = (
             f"{head}\n━━━━━━━━━━━━━━━\n" + "\n".join(lines) +
-            f"\n━━━━━━━━━━━━━━━\n"
-            f"💫 不敌心魔，道心蒙尘。\n"
-            f"📉 道心受挫，修为 -{penalty:,}（{self.LOSE_EXP_PENALTY_RATIO:.0%}）\n"
-            f"💡 提升装备、修炼道心，或换一日心境再来。"
+            "\n━━━━━━━━━━━━━━━\n" + tail
         )
         return True, msg
 

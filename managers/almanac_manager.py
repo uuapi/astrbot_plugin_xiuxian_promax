@@ -111,6 +111,12 @@ class AlmanacManager:
             if isinstance(existing, dict) and existing.get("date") == today_str:
                 return existing
         except Exception:
+            existing = None
+        # v3.55.1 自愈：现值腐化（或缺失）时强制重建——否则 get_multiplier 恒 1.0，
+        # 界面显示"宜+10%"而结算无加成（显示与结算脱钩）
+        try:
+            await self.db.ext.set_system_config(key, json.dumps(new, ensure_ascii=False))
+        except Exception:
             pass
         return new
 
@@ -150,6 +156,8 @@ class AlmanacManager:
         effects = data.get("effects") or {}
         fortune_names, avoid_lines = [], []
         for scene, val in effects.items():
+            if not isinstance(val, (int, float)):
+                continue  # v3.55.1：与 get_multiplier 同款类型防御，腐化值跳过
             name = self.SCENE_NAMES.get(scene, scene)
             pct = (float(val) - 1.0) * 100
             if pct > 0:

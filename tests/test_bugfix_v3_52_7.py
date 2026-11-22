@@ -342,7 +342,7 @@ class BugFixV3527(unittest.IsolatedAsyncioTestCase):
         ok, _ = self.bt.check_breakthrough_requirements(p)
         self.assertFalse(ok, "满级应被前置检查拦截")
         try:
-            rate, msg = self.bt.calculate_breakthrough_success_rate(p)
+            rate, msg = await self.bt.calculate_breakthrough_success_rate(p)
         except IndexError as e:
             self.fail(f"满级计算不得 IndexError（守卫缺失）: {e}")
         self.assertEqual(rate, 0.0)

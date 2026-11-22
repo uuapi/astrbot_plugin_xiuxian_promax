@@ -44,13 +44,14 @@ class BreakthroughManager:
 
         return True, ""
 
-    def calculate_breakthrough_success_rate(
+    async def calculate_breakthrough_success_rate(
         self,
         player: Player,
         pill_name: Optional[str] = None,
         temp_bonus: float = 0.0
     ) -> Tuple[float, str]:
-        """计算突破成功率"""
+        """计算突破成功率（v3.55.1 起纳入天象/黄历乘数——此前仅在 execute 实际生效，
+        /突破信息 展示口径与结算脱钩）"""
         level_data = self.config_manager.get_level_data(player.cultivation_type)
 
         # v3.52.7 守卫：满级时无下一境界可索引——指令路径已由 check_breakthrough_requirements
@@ -89,6 +90,24 @@ class BreakthroughManager:
                 info_lines.append(f"最大成功率限制：{max_rate:.1%}")
             else:
                 logger.warning(f"无效的破境丹：{pill_name}")
+
+        # v3.55.1：天象/黄历乘数纳入本口径（与 execute_breakthrough 的实际结算一致）
+        try:
+            from ..managers.weather_manager import WeatherManager
+            wm = await WeatherManager(self.db).get_multiplier("breakthrough")
+            if wm != 1.0:
+                final_rate = min(0.98, final_rate * wm)
+                info_lines.append(f"🌦️ 天象{'助道' if wm > 1 else '晦暗'}：{wm:.0%}倍")
+        except Exception:
+            pass
+        try:
+            from ..managers.almanac_manager import AlmanacManager
+            alm = await AlmanacManager(self.db).get_multiplier("breakthrough")
+            if alm != 1.0:
+                final_rate = min(0.98, final_rate * alm)
+                info_lines.append(f"📜 黄历{'宜突破' if alm > 1 else '忌突破'}：{alm:.0%}倍")
+        except Exception:
+            pass
 
         final_rate = max(0.0, min(final_rate, max_rate))
         info_lines.append(f"最终成功率：{final_rate:.1%}")
@@ -151,8 +170,8 @@ class BreakthroughManager:
                 return False, f"❌ 你的背包中没有【{pill_name}】，无法使用！", False
         # =========================================
 
-        # 2. 计算成功率
-        success_rate, rate_info = self.calculate_breakthrough_success_rate(player, pill_name, temp_bonus)
+        # 2. 计算成功率（v3.55.1：天象/黄历乘数已纳入 calculate 口径）
+        success_rate, rate_info = await self.calculate_breakthrough_success_rate(player, pill_name, temp_bonus)
 
         level_data = self.config_manager.get_level_data(player.cultivation_type)
 
@@ -194,23 +213,7 @@ class BreakthroughManager:
                 cost_note += f"\n🔄 周目神通：成功率+{sr_bonus:.0%}"
         except Exception:
             pass
-        try:
-            from ..managers.weather_manager import WeatherManager
-            wm = await WeatherManager(self.db).get_multiplier("breakthrough")
-            if wm != 1.0:
-                success_rate = min(0.98, success_rate * wm)
-                cost_note += f"\n🌦️ 天象{'助道' if wm > 1 else '晦暗'}：成功率{wm:.0%}倍"
-        except Exception:
-            pass
-        # v3.54.0 仙界黄历：宜突破/忌突破（效果为天象一半，±5%）
-        try:
-            from ..managers.almanac_manager import AlmanacManager
-            alm = await AlmanacManager(self.db).get_multiplier("breakthrough")
-            if alm != 1.0:
-                success_rate = min(0.98, success_rate * alm)
-                cost_note += f"\n📜 黄历{'宜突破' if alm > 1 else '忌突破'}：成功率{alm:.0%}倍"
-        except Exception:
-            pass
+        # （v3.55.1：天象/黄历乘数已统一纳入 calculate 口径，此处不再重复结算）
 
         # 渡劫必成符（道韵满100积累）：直接成功
         guarantee = int(pity_data.get("daoyun_guarantee", 0))
