@@ -202,6 +202,11 @@ class XiuXianPlugin(Star):
         self.shop_handler = ShopHandler(self.db, self.config, self.config_manager)
         self.storage_ring_handler = StorageRingHandler(self.db, self.config_manager)
 
+        # v3.53.0 丹药图鉴：服用自动收录，档位奖励查看即领
+        from .managers.pill_codex_manager import PillCodexManager
+        self.pill_codex_mgr = PillCodexManager(self.db, self.config, self.config_manager)
+        self.pill_handler.pill_manager.codex_mgr = self.pill_codex_mgr
+
         from .core import StorageRingManager
         self.storage_ring_mgr = StorageRingManager(self.db, self.config_manager)
 
@@ -1086,6 +1091,11 @@ class XiuXianPlugin(Star):
     @require_whitelist
     async def handle_pill_info(self, event: AstrMessageEvent, pill_name: str = ""):
         async for r in self.pill_handler.handle_pill_info(event, pill_name): yield r
+
+    @filter.command("丹药图鉴", "查看丹药图鉴：服用过的丹药自动收录，按收集比例自动发放灵石修为档位奖励")
+    @require_whitelist
+    async def handle_pill_codex(self, event: AstrMessageEvent):
+        async for r in self.pill_handler.handle_pill_codex(event): yield r
 
     @filter.command(CMD_PILL_PAVILION, "查看丹阁丹药")
     @require_whitelist

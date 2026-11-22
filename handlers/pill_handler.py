@@ -74,6 +74,64 @@ class PillHandler:
             yield event.plain_result(f"❌ {message}")
 
     @player_required
+    async def handle_pill_codex(self, player: Player, event: AstrMessageEvent):
+        """丹药图鉴：服用的丹药自动收录，按收集比例自动发放档位奖励（v3.53.0）"""
+        codex = getattr(self.pill_manager, "codex_mgr", None)
+        if codex is None:
+            yield event.plain_result("📖 丹药图鉴暂未开启。")
+            return
+        display_name = event.get_sender_name()
+
+        data = await codex.view_data(player)
+        text = codex.format_view(data)
+        claim_msg = ""
+        try:
+            claim_msg = await codex._claim_reached_tiers(player, data["pct"])
+        except Exception as e:
+            try:
+                from astrbot.api import logger as _logger
+                _logger.warning(f"【丹药图鉴】档位发放失败: {e}")
+            except Exception:
+                pass
+        if claim_msg:
+            text = claim_msg + "\n" + text
+
+        # ===== 图片卡片：成功只发图，关闭/失败降级为纯文本 =====
+        try:
+            from ..utils.image_generator import render_card_async, card_enabled
+            card_path = None
+            if card_enabled("CARD_PILL_CODEX"):
+                sections = []
+                for cat in data["categories"]:
+                    if not cat["names"]:
+                        continue
+                    taken_set = set(cat["taken"])
+                    # 已收录在前，未收录以？？？占位；每类最多展示 30 格
+                    ordered = list(cat["taken"]) + [n for n in cat["names"] if n not in taken_set]
+                    shown = ordered[:30]
+                    cells = [{"t": name[:6], "on": name in taken_set} for name in shown]
+                    hidden = len(ordered) - len(shown)
+                    sections.append({
+                        "name": f"{cat['name']} {len(cat['taken'])}/{len(cat['names'])}"
+                                + (f"（另 {hidden} 种未列出）" if hidden > 0 else ""),
+                        "grid_cols": 6,
+                        "grid": cells,
+                    })
+                card_path = await render_card_async(
+                    "info",
+                    "丹药图鉴",
+                    f"{display_name} · 收集 {len(data['collected'])}/{data['total']}（{data['pct']}%）",
+                    sections=sections,
+                    footer="服用新丹药自动收录 · 档位奖励查看即领",
+                )
+            if card_path:
+                yield event.image_result(card_path)
+            else:
+                yield event.plain_result(text)
+        except Exception:
+            yield event.plain_result(text)
+
+    @player_required
     async def handle_show_pills(self, player: Player, event: AstrMessageEvent):
         """处理查看丹药背包指令
 

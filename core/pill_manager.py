@@ -19,6 +19,7 @@ class PillManager:
     def __init__(self, db: DataBase, config_manager: ConfigManager):
         self.db = db
         self.config_manager = config_manager
+        self.codex_mgr = None  # v3.53.0 丹药图鉴（main.initialize 注入，None 时收录关闭）
 
     def _ensure_non_negative_attributes(self, player: Player):
         """保证属性不为负，并同步能量上限约束"""
@@ -205,6 +206,13 @@ class PillManager:
 
             if not result[0]:
                 return result
+            # v3.53.0：丹药图鉴收录（服用的丹药计入档案；锁内调用天然串行）
+            codex = getattr(self, "codex_mgr", None)
+            if codex is not None:
+                try:
+                    await codex.record(player, pill_name)
+                except Exception as e:
+                    logger.warning(f"【丹药图鉴】收录失败（不影响服用）: {e}")
             # 计入每日用量并落盘（在锁内执行，与并发服用天然互斥）
             usage[pill_name] = usage.get(pill_name, 0) + 1
             player.daily_pill_usage = json.dumps(usage, ensure_ascii=False)
