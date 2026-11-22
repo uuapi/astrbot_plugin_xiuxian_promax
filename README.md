@@ -8,7 +8,7 @@
 
 <br>
 
-<a href="https://github.com/uuapi/astrbot_plugin_xiuxian_promax/releases"><img src="https://img.shields.io/badge/Version-v3.55.0-D4AF37?style=flat-square&labelColor=1a1a2e" alt="Version"/></a>
+<a href="https://github.com/uuapi/astrbot_plugin_xiuxian_promax/releases"><img src="https://img.shields.io/badge/Version-v3.55.1-D4AF37?style=flat-square&labelColor=1a1a2e" alt="Version"/></a>
 <a href="https://www.python.org/"><img src="https://img.shields.io/badge/Python-3.10+-3776AB?style=flat-square&logo=python&logoColor=white" alt="Python"/></a>
 <a href="https://github.com/AstrBotDevs/AstrBot"><img src="https://img.shields.io/badge/AstrBot-3.4+-FF6B35?style=flat-square" alt="AstrBot"/></a>
 <a href="https://github.com/uuapi/astrbot_plugin_xiuxian_promax/actions"><img src="https://img.shields.io/badge/Tests-182%20Passing-2EA043?style=flat-square&logo=githubactions&logoColor=white" alt="Tests"/></a>
