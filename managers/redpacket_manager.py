@@ -60,43 +60,51 @@ class RedPacketManager:
             return False, f"❌ 份数需在 1 - {self.MAX_COUNT} 之间。"
 
         # 条件原子预扣总额
-        cursor = await self.db.conn.execute(
-            "UPDATE players SET gold = gold - ? WHERE user_id = ? AND gold >= ?",
-            (total, player.user_id, total)
-        )
-        await self.db.conn.commit()
-        if cursor.rowcount == 0:
-            return False, f"❌ 灵石不足！红包总额 {total:,}（你持有 {player.gold:,}）。"
+        # v3.52.9：扣款与建红包状态包进同一事务——原实现两段独立提交，
+        # 中间崩溃则钱已扣、红包不存在（无退款记录、无法对账）
+        await self.db.begin_immediate()
+        try:
+            cursor = await self.db.conn.execute(
+                "UPDATE players SET gold = gold - ? WHERE user_id = ? AND gold >= ?",
+                (total, player.user_id, total)
+            )
+            if cursor.rowcount == 0:
+                await self.db.conn.rollback()
+                return False, f"❌ 灵石不足！红包总额 {total:,}（你持有 {player.gold:,}）。"
 
-        # 拼手气切分：二倍均值法，保证每份 ≥ MIN_UNIT 且恰好分完
-        shares = []
-        remain, remain_cnt = total, count
-        for _i in range(count - 1):
-            avg = remain / remain_cnt
-            upper = int(avg * 2)
-            share = random.randint(self.MIN_UNIT, max(self.MIN_UNIT, upper))
-            # 保证剩余份额都可达 MIN_UNIT
-            share = min(share, remain - self.MIN_UNIT * (remain_cnt - 1))
-            share = max(share, self.MIN_UNIT)
-            shares.append(share)
-            remain -= share
-            remain_cnt -= 1
-        shares.append(remain)
+            # 拼手气切分：二倍均值法，保证每份 ≥ MIN_UNIT 且恰好分完
+            shares = []
+            remain, remain_cnt = total, count
+            for _i in range(count - 1):
+                avg = remain / remain_cnt
+                upper = int(avg * 2)
+                share = random.randint(self.MIN_UNIT, max(self.MIN_UNIT, upper))
+                # 保证剩余份额都可达 MIN_UNIT
+                share = min(share, remain - self.MIN_UNIT * (remain_cnt - 1))
+                share = max(share, self.MIN_UNIT)
+                shares.append(share)
+                remain -= share
+                remain_cnt -= 1
+            shares.append(remain)
 
-        packet_id = uuid.uuid4().hex[:8]
-        state = {
-            "sender": player.user_id,
-            "sender_name": player.user_name or player.user_id[:8],
-            "total": total,
-            "count": count,
-            "shares": shares,
-            "claimed": {},
-            "created_at": int(time.time()),
-            "expire_ts": int(time.time()) + self.EXPIRE_SECONDS,
-        }
-        await self.db.ext.set_system_config(
-            self._key(packet_id), json.dumps(state, ensure_ascii=False)
-        )
+            packet_id = uuid.uuid4().hex[:8]
+            state = {
+                "sender": player.user_id,
+                "sender_name": player.user_name or player.user_id[:8],
+                "total": total,
+                "count": count,
+                "shares": shares,
+                "claimed": {},
+                "created_at": int(time.time()),
+                "expire_ts": int(time.time()) + self.EXPIRE_SECONDS,
+            }
+            await self.db.ext.set_system_config(
+                self._key(packet_id), json.dumps(state, ensure_ascii=False), commit=False
+            )
+            await self.db.conn.commit()
+        except Exception:
+            await self.db.conn.rollback()
+            raise
         return True, (
             f"🧧 {player.user_name or player.user_id[:8]} 发出了拼手气红包！\n"
             "━━━━━━━━━━━━━━━\n"

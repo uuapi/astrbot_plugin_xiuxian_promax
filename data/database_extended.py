@@ -600,8 +600,8 @@ class DatabaseExtended:
             row = await cursor.fetchone()
             return row[0] if row else None
     
-    async def set_system_config(self, key: str, value: str):
-        """设置系统配置"""
+    async def set_system_config(self, key: str, value: str, commit: bool = True):
+        """设置系统配置（v3.52.8：事务内调用请传 commit=False）"""
         import time
         await self.ensure_system_config_table()
         await self.conn.execute(
@@ -611,7 +611,8 @@ class DatabaseExtended:
             """,
             (key, value, int(time.time()), value, int(time.time()))
         )
-        await self.conn.commit()
+        if commit:
+            await self.conn.commit()
 
     async def delete_system_config(self, key: str) -> bool:
         """删除系统配置键（v3.25.5：清理键一律 DELETE 而非置空串，

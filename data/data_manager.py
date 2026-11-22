@@ -14,26 +14,172 @@ from .database_extended import DatabaseExtended
 # 获取 Player 模型的所有字段名（用于过滤数据库中的多余字段，作为迁移未完成时的兼容）
 PLAYER_FIELDS = {f.name for f in fields(Player)}
 
+# ================= v3.52.9 写门闸（消除共享连接"事务裹挟"） =================
+# 问题：全项目共用一条 aiosqlite 连接（isolation_level=None 真 autocommit），
+# 协程 A 经 begin_immediate 开启显式事务期间，协程 B 的普通写语句会落入同一
+# 连接的打开事务——随 A 提交/回滚（B 的语义被裹挟，回滚可吞掉 B 已承诺的扣款）。
+# 方案：代理连接拦截 execute/commit/rollback——
+#   · BEGIN*        → 获取门闸锁并标记持有者（事务开启）
+#   · COMMIT/ROLLBACK → 持有者提交后释放锁（事务结束）
+#   · 其他语句      → 持有者直通；非持有者先排队获取锁再执行（绝不落入他人事务窗口）
+# 等待上限 15 秒，超时快速失败（防长事务泄漏演变为全局挂死）。
+
+_GATE_WAIT_TIMEOUT = 15.0
+
+
+class _GateOp:
+    """门闸感知的 awaitable（延迟创建底层 aiosqlite 操作：过闸后才发起，
+    排队超时路径不泄漏未 await 的操作对象）
+
+    同时支持两种消费方式（与 aiosqlite.Cursor 行为对齐）：
+      cur = await conn.execute(...)          # __await__
+      async with conn.execute(...) as cur:   # __aenter__/__aexit__（全仓 109 处）
+    """
+
+    __slots__ = ("_gate", "_conn", "_sql", "_params", "_kind", "_cursor")
+
+    def __init__(self, gate: "_WriteGate", conn, sql: str, params, kind: str):
+        self._gate = gate
+        self._conn = conn
+        self._sql = sql
+        self._params = params
+        self._kind = kind
+        self._cursor = None
+
+    def __await__(self):
+        return self._run().__await__()
+
+    async def __aenter__(self):
+        self._cursor = await self._run()
+        return self._cursor
+
+    async def __aexit__(self, exc_type, exc, tb):
+        if self._cursor is not None:
+            try:
+                await self._cursor.close()
+            except Exception:
+                pass
+        return False
+
+    async def _acquire_gate(self):
+        """排队获取门闸（非持有者路径）；超时快速失败"""
+        try:
+            await asyncio.wait_for(self._gate._lock.acquire(), timeout=_GATE_WAIT_TIMEOUT)
+        except asyncio.TimeoutError:
+            raise RuntimeError("数据库写门闸等待超时(15s)：存在未及时提交的长事务")
+
+    async def _run(self):
+        gate = self._gate
+        if self._kind == "begin":
+            task = asyncio.current_task()
+            if gate._owner is task:
+                # 同协程嵌套开启事务：直通让底层抛 "within a transaction"（沿用旧行为）
+                return await self._conn.execute(self._sql, self._params)
+            await self._acquire_gate()
+            try:
+                result = await self._conn.execute(self._sql, self._params)
+            except Exception:
+                gate._lock.release()
+                raise
+            gate._owner = task
+            return result
+        if self._kind == "end":
+            task = asyncio.current_task()
+            if gate._owner is task:
+                try:
+                    if self._sql == "COMMIT":
+                        return await self._conn.commit()
+                    return await self._conn.rollback()
+                finally:
+                    gate._owner = None
+                    if gate._lock.locked():
+                        gate._lock.release()
+            # 非持有者的 commit/rollback 也必须排队：若直接直通，其 COMMIT 可能
+            # 在线程队列中落到他人刚 BEGIN 的事务上，把对方事务提前提交
+            await self._acquire_gate()
+            try:
+                if self._sql == "COMMIT":
+                    return await self._conn.commit()
+                return await self._conn.rollback()
+            finally:
+                gate._lock.release()
+        # 普通语句：持有者直通；其余排队占闸执行，绝不落入他人事务窗口
+        if gate._owner is asyncio.current_task():
+            return await self._conn.execute(self._sql, self._params)
+        await self._acquire_gate()
+        try:
+            return await self._conn.execute(self._sql, self._params)
+        finally:
+            gate._lock.release()
+
+
+class _WriteGate:
+    """门闸状态：asyncio.Lock + 事务持有者协程标记"""
+
+    __slots__ = ("_lock", "_owner")
+
+    def __init__(self):
+        self._lock = asyncio.Lock()
+        self._owner = None
+
+    def execute(self, conn, sql: str, parameters=()) -> _GateOp:
+        u = sql.lstrip(" \t\r\n;").upper()
+        if u.startswith("BEGIN"):
+            return _GateOp(self, conn, sql, parameters, "begin")
+        if u.startswith("COMMIT") or u.startswith("ROLLBACK") or u.startswith("END"):
+            return _GateOp(self, conn, "COMMIT" if u.startswith("COMMIT") else "ROLLBACK", (), "end")
+        return _GateOp(self, conn, sql, parameters, "write")
+
+    def commit(self, conn) -> _GateOp:
+        return _GateOp(self, conn, "COMMIT", (), "end")
+
+    def rollback(self, conn) -> _GateOp:
+        return _GateOp(self, conn, "ROLLBACK", (), "end")
+
+
+class _ConnProxy:
+    """aiosqlite 连接门闸代理：除 execute/commit/rollback 外全部属性透传"""
+
+    __slots__ = ("_gate", "_conn")
+
+    def __init__(self, gate: _WriteGate, conn):
+        object.__setattr__(self, "_gate", gate)
+        object.__setattr__(self, "_conn", conn)
+
+    def execute(self, sql, parameters=()):
+        return self._gate.execute(self._conn, sql, parameters)
+
+    def commit(self):
+        return self._gate.commit(self._conn)
+
+    def rollback(self):
+        return self._gate.rollback(self._conn)
+
+    async def close(self):
+        return await self._conn.close()
+
+    def __getattr__(self, name):
+        return getattr(self._conn, name)
+
+    def __setattr__(self, name, value):
+        setattr(self._conn, name, value)
+
+
 class DataBase:
     """数据库管理类，提供基础玩家操作"""
 
     def __init__(self, db_file: str = "xiuxian_data_lite.db"):
         self.db_path = Path(db_file)
-        self.conn: aiosqlite.Connection = None
+        self.conn = None  # _ConnProxy（门闸代理）
         self.ext: Optional[DatabaseExtended] = None  # 扩展操作类
 
     async def begin_immediate(self, retries: int = 20):
         """v3.25.5：共享单连接上的安全显式事务入口（全部 BEGIN IMMEDIATE 统一走此方法）。
 
-        全项目共用一条 aiosqlite 连接，协程 A 的显式事务未结束时，协程 B 的裸
-        BEGIN 会抛 "cannot start a transaction within a transaction"，且 B 的
-        except rollback 会把 A 的未提交工作一并回滚（跨协程数据损坏）。
-        此处改为冲突时让步等待重试：B 会等到 A 的事务提交/回滚后再开启，
-        既消除并发 BEGIN 崩溃，也保证各事务段互不裹挟。
-
-        已知限制：他人协程的普通 autocommit 写语句若恰好落在 A 的事务开启期间，
-        会被裹进 A 的事务随 A 一起提交/回滚（连接级固有语义，如需彻底隔离需
-        全部写路径走 begin_immediate 串行化）。"""
+        v3.52.9：写门闸接管 BEGIN 的互斥——协程 A 的事务期间，其他协程的
+        BEGIN 与写语句都会在门闸排队等待，事务段互不裹挟（此前他人协程的
+        autocommit 写会落进 A 的打开事务随其提交/回滚）。等待上限 15 秒，
+        超时快速失败防长事务泄漏演变为全局挂死。"""
         for attempt in range(retries):
             try:
                 await self.conn.execute("BEGIN IMMEDIATE")
@@ -48,12 +194,14 @@ class DataBase:
         """连接数据库"""
         # isolation_level=None = 真 autocommit：单条写自动原子提交，显式 BEGIN IMMEDIATE 事务段
         # 才能正常开启（legacy 隐式事务模式下与显式 BEGIN 叠加会报 "transaction within a transaction"）
-        self.conn = await aiosqlite.connect(self.db_path, isolation_level=None)
-        self.conn.row_factory = aiosqlite.Row
+        conn = await aiosqlite.connect(self.db_path, isolation_level=None)
+        conn.row_factory = aiosqlite.Row
         # WAL 模式 + busy_timeout：降低读写互斥，写锁竞争时等待而非立即抛 database is locked
-        await self.conn.execute("PRAGMA journal_mode=WAL")
-        await self.conn.execute("PRAGMA busy_timeout=5000")
-        await self.conn.execute("PRAGMA synchronous=NORMAL")
+        await conn.execute("PRAGMA journal_mode=WAL")
+        await conn.execute("PRAGMA busy_timeout=5000")
+        await conn.execute("PRAGMA synchronous=NORMAL")
+        # v3.52.9：门闸代理接管（PRAGMA 在代理创建前直连执行）
+        self.conn = _ConnProxy(_WriteGate(), conn)
         self.ext = DatabaseExtended(self.conn)  # 初始化扩展操作
 
     async def ensure_performance_indexes(self):

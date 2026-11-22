@@ -594,6 +594,7 @@ class PillManager:
                 msg_parts.append(f"🌟 恢复灵气：+{actual_restore}")
                 msg_parts.append(f"💫 当前灵气：{player.spiritual_qi}/{player.max_spiritual_qi}")
 
+        refund_paid = 0
         if pill_data.get("resets_permanent_pills"):
             reset_applied = self._reset_permanent_pill_effects(player)
             if reset_applied:
@@ -601,7 +602,7 @@ class PillManager:
                 refund_ratio = pill_data.get("reset_refund_ratio", 0.5)
                 refund = int(pill_data.get("price", 0) * refund_ratio)
                 if refund > 0:
-                    player.gold += refund
+                    refund_paid = refund  # v3.52.9：退款改走原子增量，不再并入快照写回
                     msg_parts.append(f"💰 返还灵石：{refund}")
             else:
                 msg_parts.append("ℹ️ 当前没有可重置的永久增益")
@@ -620,6 +621,8 @@ class PillManager:
         player.set_pills_inventory(inventory)
 
         # 字段级写回：瞬间恢复丹触达的全部列，单语句原子
+        # v3.52.9：gold 从快照写回中移除，退款灵石改走原子增量——
+        # 快照 gold 覆盖写会吞掉结算窗口内他人加的款（银行利息/红包等）
         await self.db.update_player_fields(
             player.user_id,
             pills_inventory=player.pills_inventory,
@@ -627,7 +630,6 @@ class PillManager:
             max_blood_qi=player.max_blood_qi,
             spiritual_qi=player.spiritual_qi,
             max_spiritual_qi=player.max_spiritual_qi,
-            gold=player.gold,
             permanent_pill_gains=player.permanent_pill_gains,
             lifespan=player.lifespan,
             experience=player.experience,
@@ -638,6 +640,8 @@ class PillManager:
             mental_power=player.mental_power,
             has_debuff_shield=player.has_debuff_shield,
         )
+        if refund_paid > 0:
+            await self.db.add_player_gold(player.user_id, refund_paid)
         msg_parts.append("━━━━━━━━━━━━━━━")
         return True, "\n".join(msg_parts)
 
