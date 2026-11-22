@@ -356,8 +356,14 @@ class ShopHandler:
                     type_name = {"weapon": "武器", "armor": "防具", "technique": "功法"}.get(item_type, "装备")
                     result_lines.append(f"成功购买{type_name}【{target_item['name']}】x{quantity}，已存入储物戒。")
                 else:
-                    result_lines.append(f"成功购买【{target_item['name']}】x{quantity}。")
-                    result_lines.append(f"❌ 存入储物戒失败：{msg}")
+                    # v3.52.7 修复(收钱不给货)：入库失败必须整体回滚——库存与灵石一并还原，
+                    # 原实现照常扣款扣库存且不发货
+                    await self.db.conn.rollback()
+                    yield event.plain_result(
+                        f"❌ 购买失败：无法将【{target_item['name']}】存入储物戒（{msg}）\n"
+                        f"灵石与库存未扣除。"
+                    )
+                    return
             
             elif item_type == 'legacy_pill':
                 # v6.18 修复：购买的丹药存入丹药背包由玩家自行使用（不再立即生效）
@@ -374,8 +380,13 @@ class ShopHandler:
                 if success:
                     result_lines.append(f"成功购买材料【{target_item['name']}】x{quantity}，已存入储物戒。")
                 else:
-                    result_lines.append(f"成功购买材料【{target_item['name']}】x{quantity}。")
-                    result_lines.append(f"❌ 存入储物戒失败：{msg}")
+                    # v3.52.7 修复(收钱不给货)：同装备分支，整体回滚
+                    await self.db.conn.rollback()
+                    yield event.plain_result(
+                        f"❌ 购买失败：无法将【{target_item['name']}】存入储物戒（{msg}）\n"
+                        f"灵石与库存未扣除。"
+                    )
+                    return
             else:
                 await self.db.conn.rollback()
                 yield event.plain_result(f"未知的物品类型：{item_type}")

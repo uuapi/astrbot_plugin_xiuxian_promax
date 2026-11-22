@@ -53,6 +53,11 @@ class BreakthroughManager:
         """计算突破成功率"""
         level_data = self.config_manager.get_level_data(player.cultivation_type)
 
+        # v3.52.7 守卫：满级时无下一境界可索引——指令路径已由 check_breakthrough_requirements
+        # 前置拦截，此处兜底防核心 API 在边界输入下 IndexError 崩溃
+        if player.level_index >= len(level_data) - 1:
+            return 0.0, "你已经达到了最高境界，无法继续突破！"
+
         next_level_index = player.level_index + 1
         next_level_data = level_data[next_level_index]
         base_success_rate = next_level_data.get("success_rate", 0.5)

@@ -8,7 +8,7 @@
 
 <br>
 
-<a href="https://github.com/uuapi/astrbot_plugin_xiuxian_promax/releases"><img src="https://img.shields.io/badge/Version-v3.52.6-D4AF37?style=flat-square&labelColor=1a1a2e" alt="Version"/></a>
+<a href="https://github.com/uuapi/astrbot_plugin_xiuxian_promax/releases"><img src="https://img.shields.io/badge/Version-v3.52.7-D4AF37?style=flat-square&labelColor=1a1a2e" alt="Version"/></a>
 <a href="https://www.python.org/"><img src="https://img.shields.io/badge/Python-3.10+-3776AB?style=flat-square&logo=python&logoColor=white" alt="Python"/></a>
 <a href="https://github.com/AstrBotDevs/AstrBot"><img src="https://img.shields.io/badge/AstrBot-3.4+-FF6B35?style=flat-square" alt="AstrBot"/></a>
 <a href="https://github.com/uuapi/astrbot_plugin_xiuxian_promax/actions"><img src="https://img.shields.io/badge/Tests-182%20Passing-2EA043?style=flat-square&logo=githubactions&logoColor=white" alt="Tests"/></a>
@@ -17,7 +17,7 @@
 
 <br>
 
-**267 指令** · **43 管理器** · **25+ 玩法系统** · **182 项自动化测试** · **零已知缺陷**
+**268 指令** · **43 管理器** · **25+ 玩法系统** · **182 项自动化测试** · **并发加固**
 
 [功能特色](#-功能特色) · [快速上手](#-快速上手) · [指令大全](#-指令大全) · [架构设计](#-架构设计) · [测试](#-测试) · [版本历程](#-版本历程) · [配置](#%EF%B8%8F-配置) · [贡献](#-贡献)
 
@@ -55,7 +55,7 @@
 | 系统 | 亮点 |
 |:---|:---|
 | **闭关修炼** | 挂机 · 灵根品阶/道心/季节/天气/称号 多重倍率 |
-| **突破境界** | 65 层 · 天劫系统 · 道韵保底 · 强化保底 |
+| **突破境界** | 36 级 · 天劫系统 · 道韵保底 · 强化保底 |
 | **炼丹** | 200+ 配方 · 火候/丹劫 · 合成/背包 |
 | **炼器** | 强化保底 · 词条洗练 · 套装效果 |
 | **灵根品阶** | 凡→黄→玄→地→天 · 洗髓升级 · 永久倍率 |
@@ -327,7 +327,7 @@ git clone https://github.com/uuapi/astrbot_plugin_xiuxian_promax.git
 ```
 astrbot_plugin_xiuxian_promax/
 │
-├── main.py                        # 指令注册入口（267 条指令）
+├── main.py                        # 指令注册入口（268 条指令）
 ├── config_manager.py              # 配置管理器
 ├── models.py / models_extended.py # 数据模型
 │
@@ -469,7 +469,7 @@ ruff check . --select F821,F823,F401,F841,B007,E722,E711,E712,E731,E741,F541,E40
 
 | 文件 | 内容 |
 |:---|:---|
-| `level_config.json` | 65 层境界（修为/成功率/属性增益） |
+| `level_config.json` | 36 级境界（修为/成功率/属性增益） |
 | `pills.json` | 26 种突破丹 |
 | `exp_pills.json` | 30 种修为丹 |
 | `utility_pills.json` | 120+ 功能丹 |
@@ -532,6 +532,7 @@ ruff check . --select F821,F823,F401,F841,B007,E722,E711,E712,E731,E741,F541,E40
 | **v3.52.4** | 🧪 全量指令测试 | 268 条指令五层验证（注册/帮助/接线/行为/并发）：帮助覆盖 100%、接线零悬空、E2E 流程测试 54 用例新增，总计 175 项测试 |
 | **v3.52.5** | 🖼️ 卡片扩展 | 第一批 9 条指令卡片化：六大排行（状元/榜眼/探花）+ 我的宗门 + 银行 + 突破信息；新增 5 个卡片开关（总数 15）+ 修复 OpenMoji 缺字豆腐块 |
 | **v3.52.6** | 🖼️ 图鉴卡片 | 第二批 6 条指令卡片化：渲染器新增网格布局（锁定灰格？？？/解锁金格/★生效中）；称号图鉴按品阶分格 + 妖兽图鉴 + 收集档位 + 套装鉴识 + 成就 + 回忆录；卡片开关总数 21 |
+| **v3.52.7** | 🔧 并发与资金安全加固 | 修复 10 项缺陷：坊市购买/下架物品蒸发（交易后背包未落库）、天道盘 CAS 循环退款资金增发、丹药并发服用白嫖（use_pill 无事务）、红包并发份额烧毁 + 同用户双抢、赠予接收/拒绝并发复制、商店入库失败仍扣款、Boss 拍卖托管双退、黑市幽灵物品（改真实交付）、银行逾期删号竞态误杀；另修循环导入、满级突破 IndexError、测试 cwd 依赖、储物戒负数数量纵深校验；帮助版本号与 metadata 对齐 |
 
 </details>
 

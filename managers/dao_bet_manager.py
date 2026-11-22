@@ -159,8 +159,10 @@ class DaoBetManager:
             if await self.db.ext.syscfg_cas(self._key(date), json.dumps(new_state, ensure_ascii=False), raw or None):
                 state = new_state
                 break
-            await self.db.add_player_gold(uid, amount)  # 回滚
+            # v3.52.7 修复(资金增发)：CAS 失败只重试，不在此退款——
+            # 原实现每败一次退一次，3 连败净赚 2 倍注额；或"先退款后成功"白得免费上桌
         else:
+            await self.db.add_player_gold(uid, amount)  # 仅最终放弃时退款一次（扣款1次=退款1次）
             return False, "⚠️ 天道盘正忙，请稍后再试。"
 
         red, blue = int(state.get("red_pool", 0)), int(state.get("blue_pool", 0))

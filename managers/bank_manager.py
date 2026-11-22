@@ -401,15 +401,31 @@ class BankManager:
                     })
                 continue
 
-            await self.db.delete_player_cascade(player.user_id)
-            await self.db.ext.mark_loan_overdue(loan["id"])
+            # v3.52.7 修复(误杀)：删号是不可逆操作，必须在 BEGIN IMMEDIATE 事务内复核
+            # 贷款仍为 active——调度器读取列表后玩家可能已并发 /还款（status→closed）。
+            await self.db.begin_immediate()
+            try:
+                async with self.db.conn.execute(
+                    "SELECT status FROM bank_loans WHERE id = ?", (loan["id"],)
+                ) as cur:
+                    row = await cur.fetchone()
+                if not row or row[0] != "active":
+                    # 已还款/已标记：跳过，绝不误杀
+                    await self.db.conn.rollback()
+                    continue
 
-            # 写流水（角色已注销，流水保留作审计记录）
-            await self.db.conn.execute(
-                "INSERT INTO bank_transactions (user_id, trans_type, amount, balance_after, description, created_at) VALUES (?, ?, ?, ?, ?, ?)",
-                (loan["user_id"], "bank_kill", 0, 0, f"逾期 {overdue_days} 天未还款，被银行注销修籍", int(time.time()))
-            )
-            await self.db.conn.commit()
+                await self.db.delete_player_cascade(player.user_id)
+                await self.db.ext.mark_loan_overdue(loan["id"])
+
+                # 写流水（角色已注销，流水保留作审计记录）
+                await self.db.conn.execute(
+                    "INSERT INTO bank_transactions (user_id, trans_type, amount, balance_after, description, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+                    (loan["user_id"], "bank_kill", 0, 0, f"逾期 {overdue_days} 天未还款，被银行注销修籍", int(time.time()))
+                )
+                await self.db.conn.commit()
+            except Exception:
+                await self.db.conn.rollback()
+                raise
 
             processed.append({
                 **loan,

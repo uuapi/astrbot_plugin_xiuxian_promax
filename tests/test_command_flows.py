@@ -9,8 +9,6 @@
 覆盖系统：修炼主循环 / 签到 / 装备 / 丹药 / 商店 / 储物戒 / 宗门 / 排行榜 /
 银行 / 悬赏 / 历练 / 秘境 / 炼丹 / 洞天 / 灵田 / 改道号 / 传承 / 帮助过滤。
 """
-import asyncio
-import io
 import json
 import os
 import sys
@@ -1064,7 +1062,9 @@ class TestCodexCards(unittest.IsolatedAsyncioTestCase):
     async def test_grid_render(self):
         """渲染器 grid 段类型：锁定灰格 + 解锁金格 + 星标，能产出图片文件"""
         import os
-        from utils.image_generator import render_card
+        # v3.52.7 修复：改用包内绝对导入。原 `from utils.image_generator import ...`
+        # 是顶层导入，仅在 cwd=仓库根目录时可解析——从其他目录运行测试套件即 ModuleNotFoundError。
+        from astrbot_plugin_xiuxian_promax.utils.image_generator import render_card
         path = render_card(
             "craft", "网格测试", "3/5 已收集",
             sections=[{"name": "测试图谱", "grid_cols": 3, "grid": [

@@ -128,6 +128,14 @@ class StorageRingManager:
         return True, ""
 
     async def store_item(self, player: Player, item_name: str, count: int = 1, silent: bool = False, external_transaction: bool = False) -> Tuple[bool, str]:
+        # v3.52.7 纵深防御：manager 层拒绝非正数量（handler 层已钳制，此处兜底防内部调用方漏校验）
+        try:
+            count = int(count)
+        except (TypeError, ValueError):
+            return False, "物品数量必须是整数"
+        if count <= 0:
+            return False, "存入数量必须大于 0"
+
         can_store, reason = self.can_store_item(item_name)
         if not can_store:
             return False, reason
@@ -173,6 +181,14 @@ class StorageRingManager:
             raise
 
     async def retrieve_item(self, player: Player, item_name: str, count: int = 1) -> Tuple[bool, str]:
+        # v3.52.7 纵深防御：负数/0 数量会"越取越多"（current - count 反向增加）
+        try:
+            count = int(count)
+        except (TypeError, ValueError):
+            return False, "物品数量必须是整数"
+        if count <= 0:
+            return False, "取出数量必须大于 0"
+
         orig_player = player  # 同步调用方对象，防止其后续 update_player 回滚本次取出
         await self.db.begin_immediate()
         try:
@@ -209,6 +225,14 @@ class StorageRingManager:
             raise
 
     async def discard_item(self, player: Player, item_name: str, count: int = 1) -> Tuple[bool, str]:
+        # v3.52.7 纵深防御：同 retrieve_item，拒绝非正数量
+        try:
+            count = int(count)
+        except (TypeError, ValueError):
+            return False, "物品数量必须是整数"
+        if count <= 0:
+            return False, "丢弃数量必须大于 0"
+
         orig_player = player  # 同步调用方对象，防止其后续 update_player 回滚本次丢弃
         await self.db.begin_immediate()
         try:

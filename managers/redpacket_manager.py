@@ -143,43 +143,55 @@ class RedPacketManager:
         if player.user_id in (state.get("claimed") or {}).values():
             return False, "❌ 你已经抢过这个红包了！"
 
-        # 原子占坑：逐份 claim_slot（未被认领的份额才可占）
-        claimed = state.get("claimed") or {}
-        idx = None
-        for i in range(state["count"]):
-            if str(i) in claimed:
-                continue
-            if await self.db.ext.syscfg_claim_slot(f"rp_{packet_id}_{i}", 1):
-                idx = i
-                break
-        if idx is None:
-            return False, "🧧 手慢了！红包已被抢完。"
+        # 原子占坑 + CAS 写回。v3.52.7 修复(份额烧毁)：claim_slot 占坑与 CAS 写回并非
+        # 原子配对，原实现占坑后 CAS 失败即放弃——份额 claim 计数已耗尽，本轮无人能再领。
+        # 现在失败即释放占坑（adjust -1）并换下一份重试；同时在 CAS 写回前复核
+        # "该用户是否已领过"，堵住同一用户并发抢双份的窗口。
+        for _attempt in range(state["count"] + 2):
+            claimed = (state.get("claimed") or {})
+            idx = None
+            for i in range(state["count"]):
+                if str(i) in claimed:
+                    continue
+                if await self.db.ext.syscfg_claim_slot(f"rp_{packet_id}_{i}", 1):
+                    idx = i
+                    break
+            if idx is None:
+                return False, "🧧 手慢了！红包已被抢完。"
 
-        # CAS 把认领记录写回（失败=他人同时抢走该份 → 尝试下一份由下次调用处理）
-        for _ in range(3):
-            fresh = await self._load(packet_id)
-            if not fresh or fresh.get("expired"):
-                return False, "🧧 红包状态已变化。"
-            fresh_claimed = dict(fresh.get("claimed") or {})
-            if str(idx) in fresh_claimed:
-                break  # 该份被抢，下次再试
-            fresh_claimed[str(idx)] = player.user_id
-            # v3.40.2 修复：必须写入含新认领人的完整状态（原实现 dumps(fresh) 丢失 claimed，
-            # 认领记录永远为空 → 同一人可抢光整包）
-            if await self.db.ext.syscfg_cas(
-                self._key(packet_id), json.dumps({**fresh, "claimed": fresh_claimed}, ensure_ascii=False),
-                json.dumps(state, ensure_ascii=False),
-            ):
-                amount = state["shares"][idx]
-                await self.db.add_player_gold(player.user_id, amount)
-                lucky = ""
-                if amount == max(state["shares"]) and state["count"] > 1:
-                    lucky = "（手气最佳！）"
-                return True, (
-                    f"🧧 你抢到 {amount:,} 灵石{lucky}！\n"
-                    f"来自 {state.get('sender_name', '?')} 的红包（{idx + 1}/{state['count']} 份）"
-                )
-            state = fresh
+            confirmed = False
+            for _ in range(3):
+                fresh = await self._load(packet_id)
+                if not fresh or fresh.get("expired"):
+                    break
+                fresh_claimed = dict(fresh.get("claimed") or {})
+                if str(idx) in fresh_claimed:
+                    break  # 该份被抢，换下一份
+                if player.user_id in fresh_claimed.values():
+                    break  # 并发窗口内该用户已在其他份额入账，不得双份
+                fresh_claimed[str(idx)] = player.user_id
+                # v3.40.2 修复：必须写入含新认领人的完整状态（原实现 dumps(fresh) 丢失 claimed，
+                # 认领记录永远为空 → 同一人可抢光整包）
+                if await self.db.ext.syscfg_cas(
+                    self._key(packet_id), json.dumps({**fresh, "claimed": fresh_claimed}, ensure_ascii=False),
+                    json.dumps(fresh, ensure_ascii=False),
+                ):
+                    confirmed = True
+                    amount = fresh["shares"][idx]
+                    await self.db.add_player_gold(player.user_id, amount)
+                    lucky = ""
+                    if amount == max(fresh["shares"]) and fresh["count"] > 1:
+                        lucky = "（手气最佳！）"
+                    return True, (
+                        f"🧧 你抢到 {amount:,} 灵石{lucky}！\n"
+                        f"来自 {fresh.get('sender_name', '?')} 的红包（{idx + 1}/{fresh['count']} 份）"
+                    )
+            if not confirmed:
+                # 释放本次占坑，换下一份额重试
+                await self.db.ext.syscfg_adjust_number(f"rp_{packet_id}_{idx}", -1)
+                state = await self._load(packet_id) or state
+                if state.get("expired"):
+                    return False, "🧧 该红包已过期，手慢了……"
         return False, "🧧 手慢了！红包已被抢完。"
 
     async def get_info(self, packet_id: str) -> str:

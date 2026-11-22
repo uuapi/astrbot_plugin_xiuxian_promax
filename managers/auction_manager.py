@@ -152,6 +152,11 @@ class AuctionManager:
                     (seller_income, item_data["seller_id"])
                 )
 
+            # v3.52.7 修复(物品蒸发)：store_item(external_transaction=True) 只改内存对象，
+            # 必须在同一事务内把买家背包写回数据库，否则扣款成交后物品凭空消失
+            await self.db.update_player_fields(
+                buyer.user_id, storage_ring_items=buyer_fresh.storage_ring_items, commit=False)
+
             # 5. 从坊市删除该记录
             await self.db.conn.execute("DELETE FROM auction_items WHERE id = ?", (auction_id,))
             await self.db.conn.commit()
@@ -186,6 +191,10 @@ class AuctionManager:
             if not success:
                 await self.db.conn.rollback()
                 return False, "❌ 储物戒已满，无法下架退回物品。请清理背包后再试。"
+
+            # v3.52.7 修复(下架蒸发)：同 buy_item，返还物品必须在本事务内落库
+            await self.db.update_player_fields(
+                player.user_id, storage_ring_items=player.storage_ring_items, commit=False)
 
             await self.db.conn.execute("DELETE FROM auction_items WHERE id = ?", (auction_id,))
             await self.db.conn.commit()

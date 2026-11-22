@@ -334,8 +334,17 @@ class StorageRingHandler:
             gift_id = gift["id"]
 
             # 先删除请求记录，防止并发卡出多份
-            await self.db.conn.execute("DELETE FROM pending_gifts WHERE id = ?", (gift_id,))
-            
+            cursor = await self.db.conn.execute("DELETE FROM pending_gifts WHERE id = ?", (gift_id,))
+            if cursor.rowcount != 1:
+                # 并发接收/拒绝下只有抢占到行的一方继续（v3.52.7：防物品复制）
+                await self.db.conn.rollback()
+                yield event.plain_result("该赠予请求已被处理")
+                return
+
+            # v3.52.7：事务内重取最新玩家数据——装饰器快照可能过期，
+            # 旧快照整包写回会覆盖并发期间的其他背包变更
+            player = await self.db.get_player_by_id(user_id) or player
+
             # 尝试存入
             success, message = await self.storage_ring_manager.store_item(player, item_name, count, external_transaction=True, silent=True)
 
@@ -361,32 +370,63 @@ class StorageRingHandler:
 
     @player_required
     async def handle_reject_gift(self, player: Player, event: AstrMessageEvent):
-        """拒绝赠予的物品"""
+        """拒绝赠予的物品
+
+        v3.52.7 修复(物品复制)：与接收相同的"先占行后返还"事务模式。
+        原实现无事务无占行：读 gift → 返还 sender（独立提交）→ 删行，
+        与 /接收 并发时同一赠予双方到账；返还后删行前崩溃则物品复制。
+        """
         user_id = player.user_id
 
-        # 从数据库获取待处理的赠予请求
-        gift = await self.db.ext.get_pending_gift(user_id)
-        if not gift:
-            yield event.plain_result("你没有待处理的赠予请求")
-            return
+        # 过期清理放在 BEGIN 之前（内部 commit 会击穿外层事务）
+        await self.db.ext.cleanup_expired_gifts()
 
-        item_name = gift["item_name"]
-        count = gift["count"]
-        sender_id = gift["sender_id"]
-        sender_name = gift["sender_name"]
-        gift_id = gift["id"]
+        await self.db.begin_immediate()
+        try:
+            gift = await self.db.ext.get_pending_gift(user_id, cleanup=False)
+            if not gift:
+                await self.db.conn.rollback()
+                yield event.plain_result("你没有待处理的赠予请求")
+                return
 
-        # 物品返还给发送者
-        sender_player = await self.db.get_player_by_id(sender_id)
-        if sender_player:
-            await self.storage_ring_manager.store_item(sender_player, item_name, count, silent=True)
+            item_name = gift["item_name"]
+            count = gift["count"]
+            sender_id = gift["sender_id"]
+            sender_name = gift["sender_name"]
+            gift_id = gift["id"]
 
-        # 删除数据库中的赠予请求
-        await self.db.ext.delete_pending_gift(gift_id)
-        yield event.plain_result(
-            f"已拒绝来自【{sender_name}】的赠予\n"
-            f"【{item_name}】x{count} 已返还"
-        )
+            # 先占行：并发接收/拒绝只有 rowcount=1 的一方继续
+            cursor = await self.db.conn.execute("DELETE FROM pending_gifts WHERE id = ?", (gift_id,))
+            if cursor.rowcount != 1:
+                await self.db.conn.rollback()
+                yield event.plain_result("该赠予请求已被处理")
+                return
+
+            sender_player = await self.db.get_player_by_id(sender_id)
+            if sender_player:
+                # 返还物品：挂在外层事务统一提交，失败即整体回滚（赠予仍在，可重试）
+                ok, message = await self.storage_ring_manager.store_item(
+                    sender_player, item_name, count, external_transaction=True, silent=True)
+                if not ok:
+                    await self.db.conn.rollback()
+                    yield event.plain_result(f"❌ 返还失败：{message}\n请稍后再试")
+                    return
+                await self.db.update_player_fields(
+                    sender_player.user_id,
+                    storage_ring_items=sender_player.storage_ring_items,
+                    commit=False
+                )
+            # 发送者已注销时物品随赠予销毁（与原实现语义一致）
+
+            await self.db.conn.commit()
+            yield event.plain_result(
+                f"已拒绝来自【{sender_name}】的赠予\n"
+                f"【{item_name}】x{count} 已返还"
+            )
+        except Exception as e:
+            await self.db.conn.rollback()
+            logger.error(f"拒绝赠予异常: {e}")
+            yield event.plain_result("❌ 拒绝异常，请稍后再试。")
 
     @player_required
     async def handle_upgrade_ring(self, player: Player, event: AstrMessageEvent, ring_name: str):

@@ -1,5 +1,6 @@
 # core/pill_manager.py
 
+import asyncio
 import time
 from typing import Optional, Tuple
 from astrbot.api import logger
@@ -117,7 +118,15 @@ class PillManager:
         player: Player,
         pill_name: str
     ) -> Tuple[bool, str]:
-        """使用丹药"""
+        """使用丹药
+
+        v3.52.7 修复(并发白嫖)：进程内 asyncio.Lock 串行化 + 结算前重取最新玩家数据。
+        原实现基于调用方快照整字段写回，并发服用两种丹时后写覆盖前写——扣 1 颗生效 2 颗。
+        不用 begin_immediate：共享连接上开显式事务会裹挟并发协程的 autocommit 写入，
+        回滚时连带吞掉他人已提交语义的扣款；Lock + autocommit 字段写即可达成同样的
+        "读-改-写"互斥，且不产生事务纠缠。
+        """
+        # 快速校验走快照（仅用于无锁快速失败，真正的判定以加锁后的 fresh 为准）
         inventory = player.get_pills_inventory()
         if pill_name not in inventory or inventory[pill_name] <= 0:
             return False, f"你的背包中没有【{pill_name}】！"
@@ -148,21 +157,33 @@ class PillManager:
         if subtype == "breakthrough":
             return False, f"【{pill_name}】是破境丹，只能在突破时使用！"
 
-        if subtype == "exp":
-            return await self._use_exp_pill(player, pill_name, pill_data)
-        elif subtype == "resurrection":
-            return await self._use_resurrection_pill(player, pill_name, pill_data)
-        elif effect_type == "temporary":
-            return await self._use_temporary_pill(player, pill_name, pill_data)
-        elif effect_type == "permanent":
-            return await self._use_permanent_pill(player, pill_name, pill_data)
-        elif effect_type == "instant":
-            return await self._use_instant_pill(player, pill_name, pill_data)
-        elif "effect" in pill_data or any(k.startswith("add_") for k in pill_data.keys()):
-            # legacy 丹药（items.json 中 type=丹药，effect 字段直接含 add_xxx）
-            return await self._use_legacy_pill(player, pill_name, pill_data)
-        else:
-            return False, f"未知的丹药类型：{effect_type}"
+        if not hasattr(self, "_use_lock"):
+            self._use_lock = asyncio.Lock()
+        async with self._use_lock:
+            fresh = await self.db.get_player_by_id(player.user_id)
+            if not fresh:
+                return False, "玩家数据不存在，请重新踏入仙途"
+            player = fresh  # 以最新数据结算，防止并发写回覆盖
+
+            inventory = player.get_pills_inventory()
+            if pill_name not in inventory or inventory[pill_name] <= 0:
+                return False, f"你的背包中没有【{pill_name}】！"
+
+            if subtype == "exp":
+                return await self._use_exp_pill(player, pill_name, pill_data)
+            elif subtype == "resurrection":
+                return await self._use_resurrection_pill(player, pill_name, pill_data)
+            elif effect_type == "temporary":
+                return await self._use_temporary_pill(player, pill_name, pill_data)
+            elif effect_type == "permanent":
+                return await self._use_permanent_pill(player, pill_name, pill_data)
+            elif effect_type == "instant":
+                return await self._use_instant_pill(player, pill_name, pill_data)
+            elif "effect" in pill_data or any(k.startswith("add_") for k in pill_data.keys()):
+                # legacy 丹药（items.json 中 type=丹药，effect 字段直接含 add_xxx）
+                return await self._use_legacy_pill(player, pill_name, pill_data)
+            else:
+                return False, f"未知的丹药类型：{effect_type}"
 
     async def _use_legacy_pill(self, player: Player, pill_name: str, pill_data: dict) -> Tuple[bool, str]:
         """服用 legacy 丹药（items.json：effect = {add_experience/add_hp/add_attack/...}）"""

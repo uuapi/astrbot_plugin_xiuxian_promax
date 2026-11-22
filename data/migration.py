@@ -3,7 +3,14 @@
 import aiosqlite
 from typing import Dict, Callable, Awaitable
 from astrbot.api import logger
-from ..config_manager import ConfigManager
+
+# v3.52.7 修复(循环导入)：config_manager → data.default_configs → data/__init__ →
+# migration → config_manager 成环。本模块的 ConfigManager 仅用于类型注解，
+# 故允许导入失败降级为 None（注解合法），打破"先导入 config_manager"场景的 ImportError。
+try:
+    from ..config_manager import ConfigManager
+except ImportError:  # pragma: no cover - 仅循环导入顺序下触发
+    ConfigManager = None  # type: ignore[assignment,misc]
 
 LATEST_DB_VERSION = 29  # v29: NPC道侣（仙灵结缘）
 

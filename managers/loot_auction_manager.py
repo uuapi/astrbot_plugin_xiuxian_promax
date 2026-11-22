@@ -80,41 +80,69 @@ class LootAuctionManager:
 
     async def open_auction(self, boss_name: str, tier: int) -> Tuple[bool, str]:
         """世界Boss击杀时主控调用：开启全服拍卖（拍期 30 分钟）
-        v3.23.0：旧拍卖若尚有未退托管款（结算延迟窗口），先退款再开新拍"""
-        state = await self._load_state()
+        v3.23.0：旧拍卖若尚有未退托管款（结算延迟窗口），先退款再开新拍
+        v3.52.7 修复(双退)：旧实现"读快照→退全部托管款→无 CAS 覆写"，两协程并发开拍
+        或结算崩溃重开拍时会对同一批托管款退两次。现改为 CAS 独占接管：待退款随状态
+        一并写入 pending_refunds，只有接管成功的一方退款；结算进行中拒绝开拍。"""
         now = int(time.time())
-        if state.get("open") and now < state.get("end_ts", 0):
-            return False, "❌ 当前已有一场拍卖正在进行，无法重复开拍。"
-        # 旧拍卖未结算（定时 300 秒延迟窗口内）：先退全部托管款再覆盖
-        old_bids = state.get("bids") or {}
-        if old_bids:
-            await self._refund_bids(old_bids)
-            logger.info("[loot_auction] 旧拍卖未结算托管款已退还")
+        for _ in range(3):
+            raw = await self.db.ext.get_system_config(self.STATE_KEY)
+            state = self._parse_state(raw)
+            if state.get("open") and now < state.get("end_ts", 0):
+                return False, "❌ 当前已有一场拍卖正在进行，无法重复开拍。"
+            has_unsettled = bool(state.get("bids") or state.get("pending_refunds"))
+            # 结算中（open 已关但 bids/pending 未清）不许开拍；超过 1 小时视为结算崩溃，允许接管续退
+            if not state.get("open") and has_unsettled and now <= state.get("end_ts", 0) + 3600:
+                return False, "⏰ 上一场拍卖正在结算，请稍后再开拍。"
 
-        loot = dict(self.LOOT_TABLE.get(tier, self.LOOT_TABLE[1]))
-        state = {
-            "open": True,
-            "boss_name": boss_name,
-            "tier": tier,
-            "loot": loot,
-            "end_ts": now + self.DURATION_SECONDS,
-            "bids": {},   # uid -> {amount, name}
-        }
-        await self._save_state(state)
+            old_bids = dict(state.get("bids") or {})
+            pending = dict(state.get("pending_refunds") or {})
+            loot = dict(self.LOOT_TABLE.get(tier, self.LOOT_TABLE[1]))
+            new_state = {
+                "open": True,
+                "boss_name": boss_name,
+                "tier": tier,
+                "loot": loot,
+                "end_ts": now + self.DURATION_SECONDS,
+                "bids": {},   # uid -> {amount, name}
+                "pending_refunds": {**pending, **old_bids},  # 接管未退托管款
+            }
+            if not await self.db.ext.syscfg_cas(
+                self.STATE_KEY, json.dumps(new_state, ensure_ascii=False), raw or None
+            ):
+                continue  # 他人正在开拍/结算，重读重试
 
-        est_value = loot["exp"] + loot["gold"] * 5  # 价值量级参考（修为按灵石 1:5 估算）
-        msg = (
-            f"🔨【天机阁拍卖会】开拍！\n"
-            f"━━━━━━━━━━━━━━━\n"
-            f"👹 来源：世界Boss【{boss_name}】战利品\n"
-            f"✨ 拍品：【{loot['name']}】\n"
-            f"📜 「{loot['desc']}」\n"
-            f"💎 落槌可得：修为 {loot['exp']:,} + 灵石 {loot['gold']:,}（价值约 {est_value // 10000} 万灵石当量）\n"
-            f"⏳ 拍期：30 分钟（发送 /拍卖行 查看战况）\n"
-            f"💰 出价即托管灵石，被超越自动退还！\n"
-            f"💡 /竞拍 <金额> 参与竞价（{self.MIN_BID:,} - {self.MAX_BID:,}，价高者得）"
-        )
-        return True, msg
+            to_refund = new_state["pending_refunds"]
+            if to_refund:
+                await self._refund_bids(to_refund)
+                await self._clear_pending_refunds()
+                logger.info(f"[loot_auction] 开拍时退还旧托管款 {len(to_refund)} 笔")
+
+            est_value = loot["exp"] + loot["gold"] * 5  # 价值量级参考（修为按灵石 1:5 估算）
+            msg = (
+                f"🔨【天机阁拍卖会】开拍！\n"
+                f"━━━━━━━━━━━━━━━\n"
+                f"👹 来源：世界Boss【{boss_name}】战利品\n"
+                f"✨ 拍品：【{loot['name']}】\n"
+                f"📜 「{loot['desc']}」\n"
+                f"💎 落槌可得：修为 {loot['exp']:,} + 灵石 {loot['gold']:,}（价值约 {est_value // 10000} 万灵石当量）\n"
+                f"⏳ 拍期：30 分钟（发送 /拍卖行 查看战况）\n"
+                f"💰 出价即托管灵石，被超越自动退还！\n"
+                f"💡 /竞拍 <金额> 参与竞价（{self.MIN_BID:,} - {self.MAX_BID:,}，价高者得）"
+            )
+            return True, msg
+        return False, "⚠️ 拍卖行状态繁忙，请稍后再试。"
+
+    async def _clear_pending_refunds(self):
+        """退款完成后清除 pending_refunds 标记（尽力而为，失败由下次开拍兜底）"""
+        raw = await self.db.ext.get_system_config(self.STATE_KEY)
+        state = self._parse_state(raw)
+        if state.get("pending_refunds"):
+            await self.db.ext.syscfg_cas(
+                self.STATE_KEY,
+                json.dumps({**state, "pending_refunds": {}}, ensure_ascii=False),
+                raw or None,
+            )
 
     async def bid(self, player: Player, amount: int) -> Tuple[bool, str]:
         """/竞拍 <金额>：出价即托管，被超越自动退款，可多次加价
@@ -223,6 +251,12 @@ class LootAuctionManager:
             )
 
         win_uid, win_amt, win_name = ranking[0]
+        # v3.52.7 修复(双得/双退)：先从 bids 摘除赢家托管（视为已收讫）再发放拍品；
+        # 落选者每退一笔就从 bids 摘除并落盘。中途崩溃后重开拍时，
+        # pending_refunds 只含未退部分，不会对已收讫/已退款者重复打款。
+        bids.pop(win_uid, None)
+        await self._save_state(state)
+
         # 发拍品奖励：修为 + 灵石（拍品奖励与托管款无关，单独发放）
         winner = await self.db.get_player_by_id(win_uid)
         if winner:
@@ -243,6 +277,8 @@ class LootAuctionManager:
             lines.append("📉 以下是落选者的托管退款记录：")
             for uid, amt, name in ranking[1:]:
                 await self.db.add_player_gold(uid, amt)
+                state["bids"].pop(uid, None)
+                await self._save_state(state)
                 lines.append(f"   ↩️ {name}：退回 {amt:,} 灵石（已到账）")
         # 全部退款完成后才清 bids
         state["bids"] = {}

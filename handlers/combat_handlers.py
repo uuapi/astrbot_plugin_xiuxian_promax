@@ -2,7 +2,7 @@
 import re
 import time
 from astrbot.api.event import AstrMessageEvent
-from astrbot.api.all import *
+from astrbot.api.all import At  # v3.52.7：星号导入改为显式导入（仅用到 At）
 from ..managers.combat_manager import CombatManager, CombatStats
 from ..data.data_manager import DataBase
 from ..core import EquipmentManager, PillManager
